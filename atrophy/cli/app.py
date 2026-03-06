@@ -932,17 +932,227 @@ def _save_report_md(
 
 
 @app.command()
-def challenge() -> None:
+def challenge(
+    generate: Annotated[
+        bool,
+        typer.Option(
+            "--generate",
+            "-g",
+            help="Generate new challenges for this week.",
+        ),
+    ] = False,
+    done: Annotated[
+        int | None,
+        typer.Option(
+            "--done",
+            help="Challenge ID to mark complete",
+        ),
+    ] = None,
+) -> None:
     """Get a coding challenge to exercise a decaying skill."""
-    console.print(
-        Panel(
-            "[bold yellow]Coming soon:[/bold yellow] challenge\n\n"
-            "Will generate a targeted coding challenge"
-            " for your weakest skill.",
-            title="[yellow]» Under Construction[/yellow]",
-            border_style="yellow",
+    try:
+        asyncio.run(_run_challenge(generate, done))
+    except AtrophyError as exc:
+        _error_panel(str(exc))
+        raise typer.Exit(code=1) from exc
+
+async def _run_challenge(generate: bool, done: int | None) -> None:
+    """Execute the challenge command flow.
+
+    Args:
+        generate: Whether to generate new challenges.
+        done: ID of the challenge to mark complete.
+    """
+    cwd = str(Path.cwd().resolve())
+    storage = _get_storage()
+    await storage.init_db()
+
+    project = await storage.get_project(cwd)
+    if project is None:
+        await storage.close()
+        _error_panel(
+            "No project found. Run [cyan]atrophy init[/cyan] first."
         )
-    )
+        raise typer.Exit(code=1)
+
+    # ── Handle --done ───────────────────────────────────────────
+    if done is not None:
+        try:
+            await storage.mark_challenge_complete(done)
+        except AtrophyError as exc:
+            await storage.close()
+            _error_panel(str(exc))
+            raise typer.Exit(code=1) from exc
+
+        streak = await storage.get_streak(project.id)
+        msg_lines = [
+            f"[bold green]Challenge #{done} marked complete![/bold green]",
+            f"Current streak: [cyan]{streak} weeks[/cyan]"
+        ]
+        if streak >= 7:
+            msg_lines.append(
+                "\n[bold orange3]🔥 On fire! You're unstoppable![/bold orange3]"
+            )
+
+        _success_panel("\n".join(msg_lines))
+
+        pending = await storage.get_pending_challenges(project.id)
+        if not pending:
+            console.print(
+                "\n[dim]You have no more pending challenges. "
+                "Run[/dim] [cyan]atrophy challenge --generate[/cyan]"
+                " [dim]to get more.[/dim]"
+            )
+        await storage.close()
+        return
+
+    # ── Handle --generate ───────────────────────────────────────
+    if generate:
+        from atrophy.core.challenge_engine import ChallengeEngine
+        from atrophy.core.git_scanner import GitScanner
+        from atrophy.core.skill_mapper import SkillMapper
+        from atrophy.providers.anthropic_provider import AnthropicProvider
+        from atrophy.providers.ollama_provider import OllamaProvider
+        from atrophy.providers.openai_provider import OpenAIProvider
+
+        latest = await storage.get_latest_challenge_date(project.id)
+        now = datetime.now(UTC)
+        if latest is not None:
+            if latest.tzinfo is None:
+                latest = latest.replace(tzinfo=UTC)
+            if now - latest < timedelta(days=7):
+                if not typer.confirm(
+                    "You generated challenges less than 7 days ago. "
+                    "Generate new ones anyway?"
+                ):
+                    console.print("[dim]Aborted.[/dim]")
+                    await storage.close()
+                    return
+
+        # Prepare for generation: load skills, commits, provider
+        snapshots = await storage.get_all_skills_latest(project.id)
+        if not snapshots:
+            await storage.close()
+            _error_panel(
+                "No scan data found. "
+                "Run [cyan]atrophy scan[/cyan] first."
+            )
+            raise typer.Exit(code=1)
+
+        skill_profile = {
+            snap.skill_name: {
+                "score": snap.score,
+                "last_seen": snap.last_seen,
+                "total_hits": snap.total_hits,
+            }
+            for snap in snapshots
+        }
+
+        settings = get_settings()
+        if settings.llm_provider == "openai":
+            provider = OpenAIProvider()
+        elif settings.llm_provider == "anthropic":
+            provider = AnthropicProvider()
+        elif settings.llm_provider == "ollama":
+            provider = OllamaProvider()
+        else:
+            await storage.close()
+            _error_panel(
+                "No LLM provider configured.\nRun "
+                "[cyan]atrophy init[/cyan] to set one up."
+            )
+            raise typer.Exit(code=1)
+
+        # Load coding DNA
+        dna_raw = await storage.get_setting("coding_dna")
+        coding_dna = json.loads(dna_raw) if dna_raw else {}
+
+        language = coding_dna.get("primary_language", "python")
+        top_skills = coding_dna.get("top_skills", [])
+        top_skill = top_skills[0] if top_skills else "general_programming"
+
+        console.print()
+        _info_panel(
+            "Generating personalised challenges…",
+            title="🧠 AI Challenge Engine"
+        )
+
+        scanner = GitScanner(
+            cwd, days_back=180, author_email=project.author_email
+        )
+        commits = scanner.scan_commits()
+
+        mapper = SkillMapper()
+        dead_zones = mapper.get_dead_zones(skill_profile)
+
+        engine = ChallengeEngine(provider)
+
+        code_samples = {
+            skill: engine.get_code_sample(commits, skill)
+            for skill in dead_zones[:3]
+        }
+
+        new_challenges = await engine.generate_challenges(
+            dead_zones=dead_zones,
+            language=language,
+            code_samples=code_samples,
+            top_skill=top_skill,
+        )
+
+        await storage.save_challenges(project.id, new_challenges)
+        console.print(
+            "\n[bold green]🔥 New challenges added! "
+            "Come back next week for more.[/bold green]\n"
+        )
+        # Fall through to print pending
+
+    # ── Display pending challenges ──────────────────────────────
+    pending = await storage.get_pending_challenges(project.id)
+    await storage.close()
+
+    if not pending:
+        console.print(
+            "No active challenges. "
+            "Run [cyan]atrophy challenge --generate[/cyan]"
+            " to get this week's."
+        )
+        return
+
+    from atrophy.core.skill_mapper import SKILL_PATTERNS
+
+    console.print()
+    for ch in pending:
+        diff_color = {
+            "easy": "green",
+            "medium": "yellow",
+            "hard": "red",
+        }.get(ch.difficulty.lower(), "blue")
+
+        diff_str = ch.difficulty.upper()
+        skill_name = ch.skill_name
+
+        emoji = SKILL_PATTERNS.get(skill_name, {}).get("emoji", "🎯")
+
+        title = Text()
+        title.append(
+            f" {emoji} {diff_str} · {skill_name} ",
+            style=f"bold {diff_color}"
+        )
+
+        content = (
+            f"[bold cyan]#{ch.id}  \"{ch.title}\"[/bold cyan]\n\n"
+            f"{ch.description}\n\n"
+            f"Mark done: [cyan]atrophy challenge --done {ch.id}[/cyan]"
+        )
+
+        console.print(
+            Panel(
+                content,
+                title=title,
+                border_style=diff_color,
+            )
+        )
+        console.print()
 
 
 @app.command()

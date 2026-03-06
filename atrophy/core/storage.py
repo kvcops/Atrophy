@@ -615,6 +615,118 @@ class Storage:
             msg = f"Failed to mark challenge {challenge_id} complete: {exc}"
             raise AtrophyStorageError(msg) from exc
 
+    async def get_latest_challenge_date(
+        self, project_id: int
+    ) -> datetime | None:
+        """Get the creation date of the most recent challenge.
+
+        Args:
+            project_id: FK to the project.
+
+        Returns:
+            The datetime of the latest challenge, or None if no challenges.
+
+        Raises:
+            AtrophyStorageError: If the query fails.
+        """
+        try:
+            async with self._session_factory() as session:
+                result = await session.execute(
+                    select(func.max(Challenge.created_at)).where(
+                        Challenge.project_id == project_id
+                    )
+                )
+                return result.scalar_one_or_none()
+        except Exception as exc:
+            msg = f"Failed to get latest challenge date: {exc}"
+            raise AtrophyStorageError(msg) from exc
+
+    async def get_streak(self, project_id: int) -> int:
+        """Calculate consecutive weeks a challenge was completed.
+
+        Looks at 7-day windows starting from today going backward.
+        Counts how many consecutive windows have at least one completion.
+        If the current 7-day window has no completions, it checks if the
+        *previous* window did to allow for a current-week grace period.
+
+        Args:
+            project_id: FK to the project.
+
+        Returns:
+            The streak count in weeks.
+
+        Raises:
+            AtrophyStorageError: If the query fails.
+        """
+        try:
+            async with self._session_factory() as session:
+                result = await session.execute(
+                    select(Challenge.completed_at)
+                    .where(
+                        Challenge.project_id == project_id,
+                        Challenge.completed.is_(True),
+                        Challenge.completed_at.is_not(None),
+                    )
+                    .order_by(Challenge.completed_at.desc())
+                )
+                completed_dates = list(result.scalars().all())
+
+            if not completed_dates:
+                return 0
+
+            # Ensure all tz-naive dts are treated as UTC
+            dates_utc = [
+                d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+                for d in completed_dates
+            ]
+
+            now = datetime.now(timezone.utc)
+            streak = 0
+            
+            current_end = now
+            current_start = now - timedelta(days=7)
+            
+            # Check the most recent 7-day window
+            found_current = any(
+                current_start <= d <= current_end for d in dates_utc
+            )
+            
+            if found_current:
+                streak += 1
+                current_end = current_start
+                current_start -= timedelta(days=7)
+            else:
+                # Give a grace period: skip the current incomplete week
+                # and check if the previous week had a completion
+                current_end = current_start
+                current_start -= timedelta(days=7)
+                found_prev = any(
+                    current_start <= d <= current_end for d in dates_utc
+                )
+                if not found_prev:
+                    return 0
+                streak += 1
+                current_end = current_start
+                current_start -= timedelta(days=7)
+
+            # Keep going backward
+            while True:
+                found_in_window = any(
+                    current_start <= d <= current_end for d in dates_utc
+                )
+                if found_in_window:
+                    streak += 1
+                    current_end = current_start
+                    current_start -= timedelta(days=7)
+                else:
+                    break
+
+            return streak
+
+        except Exception as exc:
+            msg = f"Failed to calculate streak: {exc}"
+            raise AtrophyStorageError(msg) from exc
+
     # ── Settings key-value store ────────────────────────────────────
 
     async def get_setting(
