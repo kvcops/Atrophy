@@ -1162,3 +1162,338 @@ def dashboard() -> None:
 
     app_instance = AtrophyDashboard()
     app_instance.run()
+
+
+@app.command()
+def badge(
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            "-p",
+            help="Port to serve the badge API on.",
+        ),
+    ] = 6174,
+) -> None:
+    """Serve a local API that returns an SVG skill badge for your README."""
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.responses import Response
+
+    badge_app = FastAPI(title="atrophy badge API")
+
+    @badge_app.get("/")
+    def get_badge():
+        """Returns the atrophy SVG badge."""
+        # Calculate human ratio
+        cwd = str(Path.cwd().resolve())
+        storage = _get_storage()
+        try:
+            asyncio.run(storage.init_db())
+            project = asyncio.run(storage.get_project(cwd))
+
+            monthly_breakdown = {}
+            h_pct = 0
+
+            if project:
+                monthly_raw = asyncio.run(storage.get_setting("monthly_breakdown"))
+                monthly_breakdown = json.loads(monthly_raw) if monthly_raw else {}
+
+                if not monthly_breakdown:
+                    dna_raw = asyncio.run(storage.get_setting("coding_dna"))
+                    coding_dna = json.loads(dna_raw) if dna_raw else {}
+                    monthly_breakdown = coding_dna.get("monthly_breakdown", {})
+
+                total_h = 0
+                total_all = 0
+                for counts in monthly_breakdown.values():
+                    if isinstance(counts, dict):
+                        h = counts.get("human", 0)
+                        a = counts.get("ai", 0)
+                        u = counts.get("uncertain", 0)
+                        total_h += h
+                        total_all += (h + a + u)
+
+                h_pct = int(total_h / total_all * 100) if total_all > 0 else 0
+        finally:
+            asyncio.run(storage.close())
+
+        if h_pct >= 70:
+            color = "#3fb950"  # green
+        elif h_pct >= 40:
+            color = "#d29922"  # orange
+        else:
+            color = "#f85149"  # red
+
+        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="160" height="20" role="img" aria-label="atrophy score: {h_pct}%  human">
+  <title>atrophy score: {h_pct}%  human</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="160" height="20" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="90" height="20" fill="#555"/>
+    <rect x="90" width="70" height="20" fill="{color}"/>
+    <rect width="160" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="460" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="790">atrophy score</text>
+    <text x="460" y="140" transform="scale(.1)" fill="#fff" textLength="790">atrophy score</text>
+    <text aria-hidden="true" x="1240" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="500">{h_pct}%  human</text>
+    <text x="1240" y="140" transform="scale(.1)" fill="#fff" textLength="500">{h_pct}%  human</text>
+  </g>
+</svg>"""  # noqa: E501
+        return Response(content=svg, media_type="image/svg+xml")
+
+    console.print(f"[bold green]Badge served at http://localhost:{port}[/bold green]")
+    console.print(f"Add to your README: [cyan]![atrophy score](http://localhost:{port})[/cyan]")
+    console.print("[dim](Run `atrophy badge --port XXXX` to change port)[/dim]")
+
+    # SECURITY: Bind only to 127.0.0.1 (localhost)
+    uvicorn.run(badge_app, host="127.0.0.1", port=port, log_level="error")
+
+
+@app.command()
+def share(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Path to save the generated PNG card.",
+        ),
+    ] = Path("atrophy-card.png"),
+) -> None:
+    """Generate a shareable PNG card of your skill profile for Twitter/X."""
+    try:
+        # SECURITY: Path Traversal Prevention
+        safe_output = output.resolve()
+        cwd = Path.cwd().resolve()
+
+        # Ensure it has a .png extension
+        if safe_output.suffix.lower() != ".png":
+            _error_panel("Output file must have a .png extension.")
+            raise typer.Exit(code=1)
+
+        # Ensure it writes into the current working directory hierarchy
+        if not safe_output.is_relative_to(cwd):
+            _error_panel(
+                "Security Check Failed: Output path must be within the "
+                "current working directory."
+            )
+            raise typer.Exit(code=1)
+
+        asyncio.run(_run_share(safe_output))
+    except AtrophyError as exc:
+        _error_panel(str(exc))
+        raise typer.Exit(code=1) from exc
+
+
+async def _run_share(safe_output: Path) -> None:
+    """Load data and generate the share card PNG."""
+    import qrcode
+    from PIL import Image, ImageDraw, ImageFont
+
+    cwd = str(Path.cwd().resolve())
+    storage = _get_storage()
+    await storage.init_db()
+
+    project = await storage.get_project(cwd)
+    if not project:
+        await storage.close()
+        _error_panel("No project found. Run [cyan]atrophy init[/cyan] first.")
+        raise typer.Exit(code=1)
+
+    snapshots = await storage.get_all_skills_latest(project.id)
+    streak = await storage.get_streak(project.id)
+
+    monthly_raw = await storage.get_setting("monthly_breakdown")
+    monthly_breakdown = json.loads(monthly_raw) if monthly_raw else {}
+    if not monthly_breakdown:
+        dna_raw = await storage.get_setting("coding_dna")
+        coding_dna = json.loads(dna_raw) if dna_raw else {}
+        monthly_breakdown = coding_dna.get("monthly_breakdown", {})
+
+    await storage.close()
+
+    # Calculate global human / AI percentages
+    total_h = 0
+    total_a = 0
+    total_u = 0
+
+    for counts in monthly_breakdown.values():
+        if isinstance(counts, dict):
+            total_h += counts.get("human", 0)
+            total_a += counts.get("ai", 0)
+            total_u += counts.get("uncertain", 0)
+
+    total_all = total_h + total_a + total_u
+    h_pct = int(total_h / total_all * 100) if total_all > 0 else 0
+    a_pct = int(total_a / total_all * 100) if total_all > 0 else 0
+
+    # Build skill profile
+    skill_profile = {
+        snap.skill_name: {
+            "score": snap.score,
+            "last_seen": snap.last_seen,
+        }
+        for snap in snapshots
+    }
+
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=45)
+
+    dead_zones = []
+    active_skills = []
+
+    for name, data in skill_profile.items():
+        score = data["score"]
+        ls = data["last_seen"]
+
+        is_dead_zone = False
+        if ls is None or score < 8:
+            is_dead_zone = True
+        elif ls.tzinfo is None and ls.replace(tzinfo=UTC) < cutoff:
+            is_dead_zone = True
+        elif ls.tzinfo is not None and ls < cutoff:
+            is_dead_zone = True
+
+        if is_dead_zone:
+            dead_zones.append((name, score))
+        else:
+            active_skills.append((name, score))
+
+    # Sort skills by score descending
+    active_skills.sort(key=lambda x: x[1], reverse=True)
+    dead_zones.sort(key=lambda x: x[1], reverse=True)
+
+    # Take top 3 + 2 dead zones
+    top_active = active_skills[:3]
+    top_dead = dead_zones[:2]
+
+    display_skills = top_active + top_dead
+    if len(display_skills) < 5:
+        idx = 3
+        while len(display_skills) < 5 and idx < len(active_skills):
+            display_skills.append(active_skills[idx])
+            idx += 1
+
+    # -- Image Generation --
+    width, height = 1200, 630
+    bg_color = (13, 17, 23)  # #0d1117
+    img = Image.new("RGB", (width, height), color=bg_color)
+    draw = ImageDraw.Draw(img)
+
+    # Try loading some fonts. We might not have them, so fallback to default
+    try:
+        font_title = ImageFont.truetype("arial.ttf", 80)
+        font_sub = ImageFont.truetype("arial.ttf", 36)
+        font_main = ImageFont.truetype("arial.ttf", 32)
+        font_small = ImageFont.truetype("arial.ttf", 24)
+    except OSError:
+        font_title = font_sub = font_main = font_small = ImageFont.load_default()
+
+    # Top-left Title
+    draw.text((60, 60), "🧬 atrophy", font=font_title, fill=(255, 255, 255))
+    draw.text(
+        (60, 160),
+        "coding skill health tracker",
+        font=font_sub,
+        fill=(139, 148, 158),
+    )  # #8b949e
+
+    # Background card panel
+    panel_y = 240
+    draw.rounded_rectangle(
+        (60, panel_y, 800, panel_y + 260),
+        radius=10,
+        fill=(22, 27, 34),
+        outline=(48, 54, 61),
+    )
+
+    # Center Section: 5 skill bars
+    list_y = panel_y + 30
+    for name, score in display_skills[:5]:
+        is_dz = any(name == dz_name for dz_name, _ in dead_zones)
+
+        # Skill name
+        draw.text((90, list_y), name[:20], font=font_main, fill=(201, 209, 217))
+
+        # Bar
+        bar_w = 300
+        bar_h = 24
+        bar_x = 350
+        bar_y = list_y + 4
+
+        fill_w = int((score / 100) * bar_w)
+        fill_w = max(0, min(bar_w, fill_w))
+
+        score_color = (
+            (63, 185, 80)
+            if score >= 60
+            else ((210, 153, 34) if score >= 30 else (248, 81, 73))
+        )
+
+        # Empty part
+        draw.rectangle(
+            (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), fill=(33, 38, 45)
+        )
+        # Filled part
+        if fill_w > 0:
+            draw.rectangle(
+                (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), fill=score_color
+            )
+
+        # Score label
+        draw.text(
+            (bar_x + bar_w + 20, list_y),
+            f"{score:.0f}",
+            font=font_main,
+            fill=score_color,
+        )
+
+        if is_dz:
+            draw.text(
+                (bar_x + bar_w + 80, list_y),
+                "⚠ DEAD",
+                font=font_main,
+                fill=(248, 81, 73),
+            )
+
+        list_y += 42
+
+    # Bottom Row
+    bottom_y = height - 90
+    metrics_str = f"Human: {h_pct}% | AI: {a_pct}% | 🔥 {streak}-week streak"
+    draw.text((60, bottom_y), metrics_str, font=font_main, fill=(255, 255, 255))
+
+    # QR Code
+    repo_url = "https://github.com/atrophy/atrophy" # Placeholder GitHub URL
+    qr = qrcode.QRCode(box_size=4, border=2)
+    qr.add_data(repo_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="white", back_color="#0d1117")
+
+    # Resize and paste qr code
+    qr_img = qr_img.resize((150, 150), Image.Resampling.NEAREST)
+    img.paste(qr_img, (width - 200, height - 200))
+
+    # Very small watermark
+    draw.text(
+        (width - 320, height - 40),
+        "atrophy · github.com/atrophy",
+        font=font_small,
+        fill=(139, 148, 158),
+    )
+
+    # Save Image
+    try:
+        img.save(safe_output)
+    except Exception as exc:
+        raise AtrophyError(f"Failed to save share card: {exc}") from exc
+
+    _success_panel(f"Saved {safe_output} — share it on Twitter/X!")
+
