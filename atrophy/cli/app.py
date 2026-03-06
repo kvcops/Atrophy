@@ -506,12 +506,24 @@ async def _run_scan(days: int, force: bool) -> None:
     top_skills = mapper.get_strongest_skills(skill_profile)
     coding_dna = mapper.get_coding_dna(analyzed, skill_profile)
 
-    # Step 6: Save to storage
+    # Step 6: Save to storage and detect wins
+    old_snapshots = await storage.get_all_skills_latest(project.id)
+    old_profile = {
+        s.skill_name: {"score": s.score, "last_seen": s.snapshot_date}
+        for s in old_snapshots
+    }
+    
+    wins = await storage.detect_and_save_wins(project.id, old_profile, skill_profile)
+
     await storage.upsert_commits(project.id, analyzed)
     await storage.save_skill_snapshots(project.id, skill_profile)
 
-    # Step 7: Update last_scanned_at
+    # Step 7: Update last_scanned_at and scan_count
     await storage.update_last_scanned(project.id)
+    
+    scan_count_str = await storage.get_setting("scan_count", "0")
+    scan_count = int(scan_count_str) + 1
+    await storage.set_setting("scan_count", str(scan_count))
 
     # Save coding DNA as settings for report command
     await storage.set_setting(
@@ -520,11 +532,33 @@ async def _run_scan(days: int, force: bool) -> None:
 
     await storage.close()
 
+    if scan_count < 3:
+        console.print(
+            Panel(
+                "[dim]atrophy needs 2-3 scans over a few weeks to calibrate "
+                "your personal baseline. Your first reports may show lower scores "
+                "than reality — that's normal.[/dim]\n\n"
+                "[dim]The tool gets smarter about YOU over time. Run "
+                "[bold]atrophy scan[/bold] weekly for the best results.[/dim]",
+                title="📊 About your early scans",
+                border_style="yellow",
+                expand=False,
+            )
+        )
+    elif scan_count == 3:
+        console.print(
+            Panel(
+                "📈 [green]atrophy is now calibrated to your coding style.[/green]",
+                border_style="green",
+                expand=False,
+            )
+        )
+
     # Step 8: Print summary
     stats = detector.get_summary_stats(analyzed)
     detection_stats = mapper.get_detection_stats()
     _print_scan_summary(
-        stats, top_skills, dead_zones, skill_profile, detection_stats,
+        stats, top_skills, dead_zones, skill_profile, detection_stats, wins
     )
 
 
@@ -534,6 +568,7 @@ def _print_scan_summary(
     dead_zones: list[str],
     skill_profile: dict,
     detection_stats: dict | None = None,
+    wins: list | None = None,
 ) -> None:
     """Print the scan results as a Rich table.
 
@@ -542,6 +577,8 @@ def _print_scan_summary(
         top_skills: Top skill names.
         dead_zones: Dead zone skill names.
         skill_profile: Full skill profile dict.
+        detection_stats: Detection method counts.
+        wins: List of Win objects to celebrate.
     """
     total = stats["total"]
     human = stats["human_count"]
@@ -562,6 +599,28 @@ def _print_scan_summary(
         emoji = data.get("emoji", "")
         score = data.get("score", 0)
         top_skill_display = f"{emoji} {top} ({score:.0f})"
+
+    # Display Wins first!
+    if wins:
+        win_lines = []
+        for w in wins:
+            if w.win_type == "skill_improved":
+                win_lines.append(f"✨ {w.message}")
+            elif w.win_type == "dead_zone_cleared":
+                win_lines.append(f"🔥 {w.message}")
+            elif w.win_type == "new_skill_detected":
+                win_lines.append(f"🌱 {w.message}")
+            else:
+                win_lines.append(f"🎉 {w.message}")
+        
+        console.print(
+            Panel(
+                "\n".join(win_lines),
+                title="[bold green]🎉 You improved this week![/bold green]",
+                border_style="green",
+                expand=False,
+            )
+        )
 
     settings = get_settings()
 
@@ -761,7 +820,7 @@ async def _run_report(json_output: bool, share: bool) -> None:
         console.print()
         _print_monthly_chart_animated(monthly_breakdown)
 
-    # ── Section 3: Dead Zones (flash effect) ────────────────────
+    # ── Section 3: Skills to Revisit (flash effect) ────────────────────
     time.sleep(0.1)
     console.print()
     _print_dead_zones_flash(skill_profile, dead_zones)
@@ -1081,9 +1140,9 @@ def _print_dead_zones_flash(
     if not dead_zones:
         console.print(
             Panel(
-                "[green]No dead zones! "
+                "[green]No skills to revisit! "
                 "All skills are actively exercised.[/green]",
-                title="🎯 Dead Zones",
+                title="🎯 Skills to Revisit",
                 border_style="green",
             )
         )
@@ -1091,8 +1150,8 @@ def _print_dead_zones_flash(
 
     now = datetime.now(UTC)
     body_lines = [
-        "[bold]Skills you haven't exercised "
-        "in 45+ days:[/bold]\n",
+        "[bold]Skills ready for a workout "
+        "(45+ days):[/bold]\n",
     ]
     for skill_name in dead_zones:
         data = skill_profile.get(skill_name, {})
@@ -1113,7 +1172,7 @@ def _print_dead_zones_flash(
 
     # Flash effect: dim → bright red
     dim_panel = Panel(
-        body, title="🎯 Dead Zones", border_style="dim",
+        body, title="🎯 Skills to Revisit", border_style="dim",
     )
     with Live(dim_panel, console=console, transient=True):
         time.sleep(0.15)
@@ -1121,7 +1180,7 @@ def _print_dead_zones_flash(
     console.print(
         Panel(
             body,
-            title="[bold red]🎯 Dead Zones[/bold red]",
+            title="[bold red]🎯 Skills to Revisit[/bold red]",
             border_style="bright_red",
         )
     )
@@ -1157,7 +1216,7 @@ def _print_coding_dna(coding_dna: dict) -> None:
     console.print(
         Panel(
             "\n".join(lines),
-            title="🧬 Your Coding DNA",
+            title="🧬 Your Coding Fingerprint",
             border_style="magenta",
         )
     )
@@ -1195,19 +1254,19 @@ def _save_report_md(
         ls = data.get("last_seen")
         ls_str = ls.strftime("%Y-%m-%d") if ls else "never"
         badge = (
-            " ⚠️ DEAD ZONE" if name in dead_zones else ""
+            " ⚠️ NEEDS PRACTICE" if name in dead_zones else ""
         )
         lines.append(
             f"| {name} | {score:.1f}{badge} | {ls_str} |"
         )
 
     if dead_zones:
-        lines.append("\n## Dead Zones\n")
+        lines.append("\n## Skills to Revisit\n")
         for name in dead_zones:
             data = skill_profile.get(name, {})
             ls = data.get("last_seen")
             if ls is None:
-                ago = "never used"
+                ago = "ready for a workout"
             else:
                 if ls.tzinfo is None:
                     ls = ls.replace(tzinfo=UTC)
@@ -1216,7 +1275,7 @@ def _save_report_md(
             lines.append(f"- **{name}** — {ago}")
 
     if coding_dna:
-        lines.append("\n## Coding DNA\n")
+        lines.append("\n## Coding Fingerprint\n")
         lines.append(
             "- Primary language: "
             f"{coding_dna.get('primary_language', '?')}"
@@ -1840,4 +1899,117 @@ async def _run_share(safe_output: Path) -> None:
         raise AtrophyError(f"Failed to save share card: {exc}") from exc
 
     show_success(f"Saved {safe_output} \u2014 share it on Twitter/X!")
+
+@app.command()
+def digest(
+    open_editor: Annotated[
+        bool,
+        typer.Option(
+            "--open",
+            help="Open the digest in your $EDITOR",
+        ),
+    ] = False,
+) -> None:
+    """Generate a Weekly Digest aimed at journaling apps."""
+    show_banner()
+    try:
+        asyncio.run(_run_digest(open_editor))
+    except AtrophyError as exc:
+        show_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+async def _run_digest(open_editor: bool) -> None:
+    cwd = str(Path.cwd().resolve())
+    storage = _get_storage()
+    await storage.init_db()
+
+    project = await storage.get_project(cwd)
+    if not project:
+        await storage.close()
+        show_error("No project found.", hint="Run `atrophy init` first.")
+        raise typer.Exit(code=1)
+
+    # get data
+    snapshots = await storage.get_all_skills_latest(project.id)
+    pending = await storage.get_pending_challenges(project.id)
+    import datetime as dt_mod
+    wins = []
+    if hasattr(storage, "get_recent_wins"):
+        wins = await storage.get_recent_wins(project.id)
+    else:
+        # fetch directly via pure sqlalchemy logic
+        from sqlalchemy import select
+        from atrophy.core.storage import Win
+        try:
+            async with storage._session_factory() as session:
+                result = await session.execute(
+                    select(Win).where(Win.project_id == project.id, Win.date == dt_mod.date.today())
+                )
+                wins = list(result.scalars().all())
+        except Exception:
+            wins = []
+            
+    await storage.close()
+
+    now = datetime.now(UTC)
+    week_str = now.strftime("%Y-%W")
+    
+    settings = get_settings()
+    digests_dir = Path(settings.data_dir) / "digests"
+    digests_dir.mkdir(parents=True, exist_ok=True)
+    
+    filename = f"{week_str}.md"
+    digest_path = digests_dir / filename
+    
+    lines = [
+        f"## atrophy Weekly Digest \u2014 Week of {now.strftime('%B %-d, %Y')}",
+        "",
+        "### What I built this week",
+        "- Human-written commits recorded this week",
+    ]
+    
+    sk_names = [s.skill_name for s in snapshots if s.score > 10][:5]
+    if sk_names:
+        lines.append(f"- Skills exercised: {', '.join(sk_names)}")
+    
+    lines.append("")
+    lines.append("### Growth this week")
+    if wins:
+        for w in wins:
+            lines.append(f"- {w.message}")
+    else:
+        lines.append("- Consistent practice and maintenance.")
+        
+    lines.append("")
+    lines.append("### Focus for next week")
+    # find the most decayed skill
+    if snapshots:
+        snapshots.sort(key=lambda s: s.score)
+        worst = snapshots[0]
+        ago = "never"
+        if worst.last_seen:
+            dt = worst.last_seen.replace(tzinfo=UTC) if worst.last_seen.tzinfo is None else worst.last_seen
+            ago = f"{(now - dt).days} days since last used"
+        lines.append(f"Top recommendation: {worst.skill_name} ({ago})")
+    else:
+        lines.append("Keep building!")
+        
+    lines.append("")
+    lines.append("### Pending challenges")
+    if pending:
+        for c in pending:
+            d_color = "🟢" if c.difficulty == "easy" else ("🟡" if c.difficulty == "medium" else "🔴")
+            lines.append(f"- {d_color} [{c.difficulty.title()}] {c.title} (~{c.estimated_minutes} min)")
+    else:
+        lines.append("- All clear!")
+        
+    digest_path.write_text("\n".join(lines), encoding="utf-8")
+    
+    console.print(f"[green]Digest saved. Open with: cat {digest_path}[/green]")
+    if not open_editor:
+        console.print("[dim]Tip: Run `atrophy digest --open` to open in your $EDITOR[/dim]")
+    else:
+        import os, subprocess
+        editor = os.environ.get("EDITOR", "notepad")
+        subprocess.run([editor, str(digest_path)], shell=False, timeout=30)
 

@@ -594,12 +594,28 @@ class SkillMapper:
 
             if ls is None or score < 8:
                 dead.append((skill_name, ls))
-            elif ls < cutoff:
-                dead.append((skill_name, ls))
+            else:
+                from datetime import date
+                if type(ls) is date:
+                    ls_dt = datetime.combine(ls, datetime.min.time(), tzinfo=UTC)
+                else:
+                    ls_dt = ls.replace(tzinfo=UTC) if ls.tzinfo is None else ls
+                
+                if ls_dt < cutoff:
+                    dead.append((skill_name, ls))
 
-        # Sort: skills with a date come first (oldest first),
-        # then skills with None (never used) at the end
-        dead.sort(key=lambda x: (x[1] is None, x[1] or now))
+        def sort_key(x):
+            from datetime import date
+            val = x[1]
+            if val is None:
+                return (True, now)
+            if type(val) is date:
+                val = datetime.combine(val, datetime.min.time(), tzinfo=UTC)
+            elif val.tzinfo is None:
+                val = val.replace(tzinfo=UTC)
+            return (False, val)
+
+        dead.sort(key=sort_key)
         return [name for name, _ in dead]
 
     def get_strongest_skills(

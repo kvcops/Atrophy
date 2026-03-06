@@ -34,6 +34,42 @@ def run_onboarding() -> None:
     _print_welcome()
     _configure_provider()
 
+    # Show calibration message based on scan_count
+    import asyncio
+    from atrophy.core.storage import Storage
+    settings = get_settings()
+    storage = Storage(settings.db_path)
+    asyncio.run(storage.init_db())
+    try:
+        scan_count_str = asyncio.run(storage.get_setting("scan_count", "0"))
+        scan_count = int(scan_count_str)
+    except Exception:
+        scan_count = 0
+    finally:
+        asyncio.run(storage.close())
+
+    if scan_count < 3:
+        console.print(
+            Panel(
+                "[dim]atrophy needs 2-3 scans over a few weeks to calibrate "
+                "your personal baseline. Your first report may show lower scores "
+                "than reality — that's normal.[/dim]\n\n"
+                "[dim]The tool gets smarter about YOU over time.\n"
+                "Run [bold]atrophy scan[/bold] weekly for the best results.[/dim]",
+                title="📊 About your first scan",
+                border_style="yellow",
+                expand=False,
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                "📈 [green]atrophy is now calibrated to your coding style.[/green]",
+                border_style="green",
+                expand=False,
+            )
+        )
+
 
 # ── Welcome ─────────────────────────────────────────────────────
 

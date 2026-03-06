@@ -9,7 +9,7 @@ Security:
     - User-supplied values always go through SQLAlchemy parameter binding.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import (
@@ -135,6 +135,15 @@ class Challenge(Base):
     description: Mapped[str] = mapped_column(Text)
     completed: Mapped[bool] = mapped_column(default=False)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+class Win(Base):
+    __tablename__ = "wins"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    date: Mapped[date]
+    win_type: Mapped[str]   # "skill_improved", "dead_zone_cleared", "challenge_done", "streak_milestone", "new_skill_detected"
+    skill_name: Mapped[str | None]
+    message: Mapped[str]    # human-readable celebration
 
 
 class Setting(Base):
@@ -844,4 +853,68 @@ class Storage:
             raise
         except Exception as exc:
             msg = f"Failed to set setting '{key}': {exc}"
+            raise AtrophyStorageError(msg) from exc
+
+    # ── Wins ────────────────────────────────────────────────────────
+
+    async def detect_and_save_wins(
+        self, project_id: int, old_profile: dict, new_profile: dict
+    ) -> list[Win]:
+        from atrophy.core.skill_mapper import SkillMapper
+        wins = []
+        old_dz = []
+        mapper = SkillMapper()
+        if old_profile:
+            old_dz = mapper.get_dead_zones(old_profile)
+        
+        new_dz = mapper.get_dead_zones(new_profile)
+
+        for skill, new_data in new_profile.items():
+            old_data = old_profile.get(skill) if old_profile else {}
+            
+            # Use 0.0 if not present
+            old_score = old_data.get("score", 0.0) if isinstance(old_data, dict) else 0.0
+            new_score = new_data.get("score", 0.0) if isinstance(new_data, dict) else 0.0
+            
+            if old_score == 0.0 and new_score > 0.0 and old_profile:
+                # new skill detected only if we had an old profile (otherwise it's the very first scan and everything is "new")
+                wins.append(
+                    Win(
+                        project_id=project_id, date=date.today(),
+                        win_type="new_skill_detected", skill_name=skill,
+                        message=f"New skill detected: {skill}!"
+                    )
+                )
+                continue
+
+            diff = new_score - old_score
+            if diff > 10:
+                wins.append(
+                    Win(
+                        project_id=project_id, date=date.today(),
+                        win_type="skill_improved", skill_name=skill,
+                        message=f"Your {skill} improved by +{int(diff)} points!"
+                    )
+                )
+            
+            if skill in old_dz and skill not in new_dz:
+                wins.append(
+                    Win(
+                        project_id=project_id, date=date.today(),
+                        win_type="dead_zone_cleared", skill_name=skill,
+                        message=f"You revived {skill}!"
+                    )
+                )
+
+        if not wins:
+            return []
+
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    for w in wins:
+                        session.add(w)
+            return wins
+        except Exception as exc:
+            msg = f"Failed to save wins: {exc}"
             raise AtrophyStorageError(msg) from exc
