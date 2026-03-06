@@ -1158,11 +1158,7 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
 @app.command()
 def dashboard() -> None:
     """Launch the interactive TUI dashboard."""
-    console.print(
-        Panel(
-            "[bold yellow]Coming soon:[/bold yellow] dashboard\n\n"
-            "Will launch the Textual-based interactive dashboard.",
-            title="[yellow]» Under Construction[/yellow]",
-            border_style="yellow",
-        )
-    )
+    from atrophy.tui.dashboard import AtrophyDashboard
+
+    app_instance = AtrophyDashboard()
+    app_instance.run()
