@@ -401,7 +401,22 @@ async def _run_scan(days: int, force: bool) -> None:
 
     # Step 4 + 5: Classify and map with live dashboard
     detector = AIDetector()
-    mapper = SkillMapper()
+
+    from atrophy.config import get_settings
+    from atrophy.core.skill_classifier import LLMSkillClassifier
+    from atrophy.exceptions import ProviderError
+    from atrophy.providers import get_provider
+
+    llm_classifier = None
+    try:
+        settings_obj = get_settings()
+        provider = get_provider(settings_obj)
+        llm_classifier = LLMSkillClassifier(provider)
+    except ProviderError:
+        # It's fine to scan without an LLM; Layer 2 classification is just skipped
+        pass
+
+    mapper = SkillMapper(llm_classifier=llm_classifier)
 
     analyzed: list[dict] = []
     live_human = 0
@@ -497,8 +512,9 @@ async def _run_scan(days: int, force: bool) -> None:
 
     # Step 8: Print summary
     stats = detector.get_summary_stats(analyzed)
+    detection_stats = mapper.get_detection_stats()
     _print_scan_summary(
-        stats, top_skills, dead_zones, skill_profile,
+        stats, top_skills, dead_zones, skill_profile, detection_stats,
     )
 
 
@@ -507,6 +523,7 @@ def _print_scan_summary(
     top_skills: list[str],
     dead_zones: list[str],
     skill_profile: dict,
+    detection_stats: dict | None = None,
 ) -> None:
     """Print the scan results as a Rich table.
 
@@ -574,6 +591,15 @@ def _print_scan_summary(
     table.add_row(
         "Data stored at", f"[dim]{settings.data_dir}[/dim]",
     )
+
+    if detection_stats:
+        ast = detection_stats.get("ast", 0)
+        llm = detection_stats.get("llm", 0)
+        kw = detection_stats.get("keyword", 0)
+        table.add_row(
+            "Detection method",
+            f"[dim]{ast} AST  \u00b7  {llm} LLM  \u00b7  {kw} Keyword[/dim]",
+        )
 
     console.print()
     console.print(table)

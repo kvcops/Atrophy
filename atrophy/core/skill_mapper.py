@@ -1,17 +1,27 @@
 """Skill mapper — categorizes human commits into 10 coding skill areas.
 
-Maps commit diffs to skill categories using keyword pattern matching
-against added lines, with recency-weighted scoring. Only processes
-commits classified as human-leaning (ai_probability < 0.55).
+Maps commit diffs to skill categories using a 3-layer detection system:
+    Layer 1: tree-sitter AST analysis (most accurate, for supported languages)
+    Layer 2: LLM-based classification (for unsupported languages / complex diffs)
+    Layer 3: Keyword pattern fallback (legacy, always available)
+
+Only processes commits classified as human-leaning (ai_probability < 0.55).
 
 The 10 canonical skill categories are:
     async_concurrency, data_structures, sql_databases, regex_parsing,
     error_handling, api_design, testing, algorithms, system_io, security
 """
 
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Skill Patterns ──────────────────────────────────────────────────
 
@@ -239,6 +249,25 @@ RECENCY_WEIGHT_OLD = 1.0  # older than 90 days
 # AI probability threshold — only analyze human-leaning commits
 AI_THRESHOLD = 0.55
 
+# Minimum added lines to use tree-sitter analysis
+MIN_AST_LINES = 10
+
+# Minimum diff length to use LLM classification
+MIN_LLM_CHARS = 100
+
+# Comment patterns per language for the simple stripper
+_COMMENT_PATTERNS: dict[str, re.Pattern] = {
+    "py": re.compile(r"(#.*)|(\"\"\"[\s\S]*?\"\"\")|('''[\s\S]*?''')"),
+    "ts": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "js": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "rs": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "go": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "java": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "rb": re.compile(r"(#.*)|(=begin[\s\S]*?=end)"),
+    "cpp": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+    "c": re.compile(r"(//.*)|(/\*[\s\S]*?\*/)"),
+}
+
 
 # ── SkillMapper ─────────────────────────────────────────────────────
 
@@ -246,13 +275,71 @@ AI_THRESHOLD = 0.55
 class SkillMapper:
     """Maps human commits to 10 canonical coding skill categories.
 
+    Uses a 3-layer detection system:
+        1. **tree-sitter AST** for supported languages (most accurate)
+        2. **LLM classification** for unsupported languages (last 90 days)
+        3. **Keyword fallback** for everything else
+
     Only processes commits where ``ai_probability < 0.55``. Applies
     recency weighting (3x for last 30 days, 2x for 31–90, 1x older)
     and normalizes scores to 0–100.
     """
 
+    def __init__(
+        self,
+        tree_sitter_analyzer=None,
+        llm_classifier=None,
+    ) -> None:
+        """Initialize with optional analyzer and classifier.
+
+        Args:
+            tree_sitter_analyzer: Optional TreeSitterAnalyzer instance.
+                If None, one will be lazily created on first use.
+            llm_classifier: Optional LLMSkillClassifier instance.
+                If None, LLM classification is skipped.
+        """
+        self._ts_analyzer = tree_sitter_analyzer
+        self._llm_classifier = llm_classifier
+        self._ts_initialized = tree_sitter_analyzer is not None
+
+        # Detection stats
+        self.stats_ast: int = 0
+        self.stats_llm: int = 0
+        self.stats_keyword: int = 0
+
+    def _get_ts_analyzer(self):
+        """Lazy-load the tree-sitter analyzer.
+
+        Returns:
+            TreeSitterAnalyzer instance, or None if import fails.
+        """
+        if self._ts_initialized:
+            return self._ts_analyzer
+
+        self._ts_initialized = True
+        try:
+            from atrophy.core.tree_sitter_analyzer import (
+                TreeSitterAnalyzer,
+            )
+
+            self._ts_analyzer = TreeSitterAnalyzer()
+        except ImportError:
+            logger.debug(
+                "tree-sitter-language-pack not available; "
+                "falling back to keyword detection",
+            )
+            self._ts_analyzer = None
+
+        return self._ts_analyzer
+
     def map_skills(self, commits: list[dict]) -> dict[str, dict]:
         """Build a skill profile from analyzed commits.
+
+        Uses the 3-layer detection system for each commit:
+        1. tree-sitter AST (if language supported and diff >= 10 lines)
+        2. LLM classifier (if provider available & diff >= 100 chars
+           & commit in last 90 days)
+        3. Keyword fallback (with comment stripping)
 
         Args:
             commits: List of commit dicts from AIDetector (must have
@@ -264,47 +351,63 @@ class SkillMapper:
             dict with: score, last_seen, total_hits, recent_hits,
             trend, description, emoji.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         thirty_days_ago = now - timedelta(days=30)
         ninety_days_ago = now - timedelta(days=90)
 
         # Accumulators per skill
-        weighted_hits: dict[str, float] = {k: 0.0 for k in SKILL_PATTERNS}
-        total_hits: dict[str, int] = {k: 0 for k in SKILL_PATTERNS}
-        recent_hits: dict[str, int] = {k: 0 for k in SKILL_PATTERNS}
-        last_seen: dict[str, datetime | None] = {
-            k: None for k in SKILL_PATTERNS
-        }
+        weighted_hits: dict[str, float] = dict.fromkeys(SKILL_PATTERNS, 0.0)
+        total_hits: dict[str, int] = dict.fromkeys(SKILL_PATTERNS, 0)
+        recent_hits: dict[str, int] = dict.fromkeys(SKILL_PATTERNS, 0)
+        last_seen: dict[str, datetime | None] = dict.fromkeys(SKILL_PATTERNS)
         # For trend: hits in month M-1 vs month M-2
-        month_1_hits: dict[str, int] = {k: 0 for k in SKILL_PATTERNS}
-        month_2_hits: dict[str, int] = {k: 0 for k in SKILL_PATTERNS}
+        month_1_hits: dict[str, int] = dict.fromkeys(SKILL_PATTERNS, 0)
+        month_2_hits: dict[str, int] = dict.fromkeys(SKILL_PATTERNS, 0)
         sixty_days_ago = now - timedelta(days=60)
+
+        # Reset detection stats
+        self.stats_ast = 0
+        self.stats_llm = 0
+        self.stats_keyword = 0
+
+        # Get the tree-sitter analyzer
+        ts = self._get_ts_analyzer()
+
+        # Build keyword map for tree-sitter fallback
+        fallback_keywords = {
+            name: pattern["keywords"]
+            for name, pattern in SKILL_PATTERNS.items()
+        }
 
         # Filter to human-leaning commits only
         human_commits = [
-            c for c in commits if c.get("ai_probability", 1.0) < AI_THRESHOLD
+            c
+            for c in commits
+            if c.get("ai_probability", 1.0) < AI_THRESHOLD
         ]
 
         for commit in human_commits:
-            ts = commit.get("timestamp")
-            if ts is None:
+            ts_val = commit.get("timestamp")
+            if ts_val is None:
                 continue
 
             # Ensure timezone-aware
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+            if ts_val.tzinfo is None:
+                ts_val = ts_val.replace(tzinfo=UTC)
 
             # Determine recency weight
-            if ts >= thirty_days_ago:
+            if ts_val >= thirty_days_ago:
                 weight = RECENCY_WEIGHT_RECENT
-            elif ts >= ninety_days_ago:
+            elif ts_val >= ninety_days_ago:
                 weight = RECENCY_WEIGHT_MID
             else:
                 weight = RECENCY_WEIGHT_OLD
 
             # Determine which month bucket for trend
-            is_month_1 = ts >= thirty_days_ago
-            is_month_2 = sixty_days_ago <= ts < thirty_days_ago
+            is_month_1 = ts_val >= thirty_days_ago
+            is_month_2 = (
+                sixty_days_ago <= ts_val < thirty_days_ago
+            )
 
             # Get file extensions from this commit
             commit_extensions = self._get_extensions(
@@ -312,24 +415,106 @@ class SkillMapper:
             )
             diff_text = commit.get("diff_text", "")
 
-            for skill_name, pattern_def in SKILL_PATTERNS.items():
-                # Check if any of the commit's files match this skill's
-                # relevant extensions
-                skill_exts = set(pattern_def["file_extensions"])
-                if commit_extensions and not commit_extensions & skill_exts:
-                    continue
+            # Count added lines
+            added_lines = sum(
+                1
+                for line in diff_text.splitlines()
+                if line.startswith("+")
+                and not line.startswith("+++")
+            )
 
-                # Count keyword hits in diff_text
-                hits = self._count_keyword_hits(
-                    diff_text, pattern_def["keywords"]
+            # Determine primary extension for this commit
+            primary_ext = self._primary_extension(
+                commit.get("files_changed", [])
+            )
+
+            # ── Layer 1: tree-sitter AST ────────────────────
+            skill_hits: dict[str, int] = {}
+            detection_method = "keyword"
+
+            if (
+                ts is not None
+                and primary_ext is not None
+                and ts.is_supported(primary_ext)
+                and added_lines >= MIN_AST_LINES
+            ):
+                skill_hits = ts.analyze_diff(
+                    diff_text,
+                    primary_ext,
+                    keywords_by_skill=fallback_keywords,
                 )
+                if skill_hits:
+                    detection_method = "ast"
+
+            # ── Layer 2: LLM classification ─────────────────
+            if (
+                not skill_hits
+                and self._llm_classifier is not None
+                and len(diff_text) >= MIN_LLM_CHARS
+                and ts_val >= ninety_days_ago
+            ):
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # We're inside an async context
+                        import concurrent.futures
+
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            llm_result = pool.submit(
+                                asyncio.run,
+                                self._llm_classifier.classify_diff(
+                                    diff_text, primary_ext or "unknown",
+                                ),
+                            ).result()
+                    else:
+                        llm_result = asyncio.run(
+                            self._llm_classifier.classify_diff(
+                                diff_text,
+                                primary_ext or "unknown",
+                            )
+                        )
+                except Exception:
+                    llm_result = {}
+
+                if llm_result:
+                    # Convert confidence scores to hit counts
+                    # Score of 1.0 → 3 hits, 0.5 → 1 hit
+                    skill_hits = {
+                        name: max(1, int(score * 3))
+                        for name, score in llm_result.items()
+                    }
+                    detection_method = "llm"
+
+            # ── Layer 3: Keyword fallback ───────────────────
+            if not skill_hits:
+                # Use keyword scanning with comment stripping
+                stripped_diff = self._strip_comments(
+                    diff_text, primary_ext,
+                )
+                skill_hits = self._keyword_scan(
+                    stripped_diff, commit_extensions,
+                )
+                detection_method = "keyword"
+
+            # Track detection method
+            if detection_method == "ast":
+                self.stats_ast += 1
+            elif detection_method == "llm":
+                self.stats_llm += 1
+            else:
+                self.stats_keyword += 1
+
+            # Apply hits to accumulators
+            for skill_name, hits in skill_hits.items():
+                if skill_name not in SKILL_PATTERNS:
+                    continue
                 if hits == 0:
                     continue
 
                 total_hits[skill_name] += hits
                 weighted_hits[skill_name] += hits * weight
 
-                if ts >= thirty_days_ago:
+                if ts_val >= thirty_days_ago:
                     recent_hits[skill_name] += hits
 
                 if is_month_1:
@@ -338,13 +523,18 @@ class SkillMapper:
                     month_2_hits[skill_name] += hits
 
                 # Track most recent occurrence
-                if last_seen[skill_name] is None or ts > last_seen[skill_name]:
-                    last_seen[skill_name] = ts
+                if (
+                    last_seen[skill_name] is None
+                    or ts_val > last_seen[skill_name]
+                ):
+                    last_seen[skill_name] = ts_val
 
         # Build the final profile
         profile: dict[str, dict] = {}
         for skill_name, pattern_def in SKILL_PATTERNS.items():
-            score = min(100.0, weighted_hits[skill_name] * 2.5)
+            score = min(
+                100.0, weighted_hits[skill_name] * 2.5
+            )
             trend = self._compute_trend(
                 month_1_hits[skill_name],
                 month_2_hits[skill_name],
@@ -362,6 +552,19 @@ class SkillMapper:
             }
 
         return profile
+
+    def get_detection_stats(self) -> dict[str, int]:
+        """Return detection method statistics from the last scan.
+
+        Returns:
+            Dict with keys 'ast', 'llm', 'keyword' and
+            their respective commit counts.
+        """
+        return {
+            "ast": self.stats_ast,
+            "llm": self.stats_llm,
+            "keyword": self.stats_keyword,
+        }
 
     def get_dead_zones(
         self, skill_profile: dict, threshold_days: int = 45
@@ -381,7 +584,7 @@ class SkillMapper:
             List of skill names sorted by urgency (longest since
             last use first, then never-used skills at the end).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(days=threshold_days)
         dead: list[tuple[str, datetime | None]] = []
 
@@ -439,7 +642,7 @@ class SkillMapper:
         if skill not in SKILL_PATTERNS:
             return []
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         pattern_def = SKILL_PATTERNS[skill]
         skill_exts = set(pattern_def["file_extensions"])
 
@@ -451,18 +654,20 @@ class SkillMapper:
             month_hits[key] = 0
 
         human_commits = [
-            c for c in commits if c.get("ai_probability", 1.0) < AI_THRESHOLD
+            c
+            for c in commits
+            if c.get("ai_probability", 1.0) < AI_THRESHOLD
         ]
 
         for commit in human_commits:
-            ts = commit.get("timestamp")
-            if ts is None:
+            ts_val = commit.get("timestamp")
+            if ts_val is None:
                 continue
 
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+            if ts_val.tzinfo is None:
+                ts_val = ts_val.replace(tzinfo=UTC)
 
-            month_key = ts.strftime("%Y-%m")
+            month_key = ts_val.strftime("%Y-%m")
             if month_key not in month_hits:
                 continue
 
@@ -473,15 +678,20 @@ class SkillMapper:
                 continue
 
             hits = self._count_keyword_hits(
-                commit.get("diff_text", ""), pattern_def["keywords"]
+                commit.get("diff_text", ""),
+                pattern_def["keywords"],
             )
             month_hits[month_key] += hits
 
         # Convert hits to scores and sort chronologically
         result: list[dict] = []
         for month_key in sorted(month_hits.keys()):
-            score = min(100.0, month_hits[month_key] * 2.5)
-            result.append({"month": month_key, "score": round(score, 1)})
+            score = min(
+                100.0, month_hits[month_key] * 2.5,
+            )
+            result.append(
+                {"month": month_key, "score": round(score, 1)}
+            )
 
         return result
 
@@ -507,28 +717,36 @@ class SkillMapper:
                 if ext:
                     ext_counts[ext] += 1
         primary_language = (
-            ext_counts.most_common(1)[0][0] if ext_counts else "python"
+            ext_counts.most_common(1)[0][0]
+            if ext_counts
+            else "python"
         )
 
         # AI ratio
         total = len(commits)
         ai_count = sum(
-            1 for c in commits if c.get("classification") == "ai"
+            1
+            for c in commits
+            if c.get("classification") == "ai"
         )
         ai_ratio = ai_count / total if total > 0 else 0.0
 
         # Average commit size
         additions = [c.get("additions", 0) for c in commits]
-        avg_commit_size = sum(additions) / len(additions) if additions else 0.0
+        avg_commit_size = (
+            sum(additions) / len(additions) if additions else 0.0
+        )
 
         # Most productive hour
         hour_counts: Counter[int] = Counter()
         for commit in commits:
-            ts = commit.get("timestamp")
-            if ts is not None:
-                hour_counts[ts.hour] += 1
+            ts_val = commit.get("timestamp")
+            if ts_val is not None:
+                hour_counts[ts_val.hour] += 1
         most_productive_hour = (
-            hour_counts.most_common(1)[0][0] if hour_counts else None
+            hour_counts.most_common(1)[0][0]
+            if hour_counts
+            else None
         )
 
         # Top skills and dead zones
@@ -536,7 +754,9 @@ class SkillMapper:
         dead_zones = self.get_dead_zones(skill_profile)
 
         # Determine coding style
-        coding_style = self._determine_style(ai_ratio, avg_commit_size)
+        coding_style = self._determine_style(
+            ai_ratio, avg_commit_size,
+        )
 
         return {
             "primary_language": primary_language,
@@ -550,8 +770,83 @@ class SkillMapper:
 
     # ── Private helpers ─────────────────────────────────────────────
 
+    def _keyword_scan(
+        self,
+        diff_text: str,
+        commit_extensions: set[str],
+    ) -> dict[str, int]:
+        """Scan diff text for keyword hits across all skills.
+
+        Args:
+            diff_text: Diff text (possibly comment-stripped).
+            commit_extensions: File extensions in this commit.
+
+        Returns:
+            Dict mapping skill names to hit counts.
+        """
+        hits: dict[str, int] = {}
+        for skill_name, pattern_def in SKILL_PATTERNS.items():
+            skill_exts = set(pattern_def["file_extensions"])
+            if commit_extensions and not (
+                commit_extensions & skill_exts
+            ):
+                continue
+
+            count = self._count_keyword_hits(
+                diff_text, pattern_def["keywords"],
+            )
+            if count > 0:
+                hits[skill_name] = count
+
+        return hits
+
     @staticmethod
-    def _count_keyword_hits(diff_text: str, keywords: list[str]) -> int:
+    def _strip_comments(
+        diff_text: str, extension: str | None,
+    ) -> str:
+        """Strip comments from diff text for cleaner keyword scanning.
+
+        Args:
+            diff_text: Raw diff text.
+            extension: File extension (without dot).
+
+        Returns:
+            Diff text with comments removed.
+        """
+        if extension is None:
+            return diff_text
+
+        pattern = _COMMENT_PATTERNS.get(extension)
+        if pattern is None:
+            return diff_text
+
+        return pattern.sub("", diff_text)
+
+    @staticmethod
+    def _primary_extension(
+        files_changed: list[str],
+    ) -> str | None:
+        """Get the most common file extension in the commit.
+
+        Args:
+            files_changed: List of file paths.
+
+        Returns:
+            Most common extension (without dot), or None.
+        """
+        counts: Counter[str] = Counter()
+        for fp in files_changed:
+            ext = Path(fp).suffix.lstrip(".").lower()
+            if ext:
+                counts[ext] += 1
+        if counts:
+            return counts.most_common(1)[0][0]
+        return None
+
+    @staticmethod
+    def _count_keyword_hits(
+        diff_text: str, keywords: list[str],
+    ) -> int:
         """Count how many times any keyword appears in the diff text.
 
         Most keywords are matched case-sensitively. Keywords containing
@@ -568,14 +863,15 @@ class SkillMapper:
         count = 0
         for keyword in keywords:
             if ".*" in keyword:
-                # Simple pattern: "class.*Error" matches "class MyError"
-                # Split on .* and check both parts exist on same line
+                # Simple pattern: "class.*Error" matches
+                # "class MyError"
                 parts = keyword.split(".*", 1)
                 for line in diff_text.splitlines():
                     prefix_idx = line.find(parts[0])
                     if prefix_idx >= 0:
                         suffix_idx = line.find(
-                            parts[1], prefix_idx + len(parts[0])
+                            parts[1],
+                            prefix_idx + len(parts[0]),
                         )
                         if suffix_idx >= 0:
                             count += 1
@@ -584,7 +880,9 @@ class SkillMapper:
         return count
 
     @staticmethod
-    def _get_extensions(files_changed: list[str]) -> set[str]:
+    def _get_extensions(
+        files_changed: list[str],
+    ) -> set[str]:
         """Extract unique file extensions (without dot, lowercase).
 
         Args:
@@ -602,7 +900,9 @@ class SkillMapper:
 
     @staticmethod
     def _compute_trend(
-        month_1_hits: int, month_2_hits: int, total_hits: int
+        month_1_hits: int,
+        month_2_hits: int,
+        total_hits: int,
     ) -> str:
         """Determine the trend direction for a skill.
 
@@ -631,12 +931,14 @@ class SkillMapper:
         return "stable"
 
     @staticmethod
-    def _determine_style(ai_ratio: float, avg_commit_size: float) -> str:
+    def _determine_style(
+        ai_ratio: float, avg_commit_size: float,
+    ) -> str:
         """Determine the developer's coding style label.
 
         Args:
             ai_ratio: Fraction of commits classified as AI.
-            avg_commit_size: Average number of lines added per commit.
+            avg_commit_size: Average number of lines added.
 
         Returns:
             A style label string.
