@@ -419,18 +419,14 @@ class TestSpecificRules:
 
         from sqlalchemy import select
 
-        async with storage.SessionLocal() as session:
+        async with storage._session_factory() as session:
             challenge = Challenge(
                 project_id=project.id,
                 skill_name="testing",
                 title="Test",
                 description="Test",
                 difficulty="easy",
-                estimated_minutes=15,
-                hints="[]",
-                success_criteria="Test",
                 completed=False,
-                generated_at=datetime.now(timezone.utc)
             )
             session.add(challenge)
             await session.commit()
@@ -439,7 +435,7 @@ class TestSpecificRules:
 
         await storage.mark_challenge_complete(challenge_id)
 
-        async with storage.SessionLocal() as session:
+        async with storage._session_factory() as session:
             result = await session.execute(select(Challenge).where(Challenge.id == challenge_id))
             updated = result.scalars().first()
 

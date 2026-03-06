@@ -195,8 +195,8 @@ class AtrophyDashboard(App):
         project = await storage.get_project(cwd)
         if not project:
             await storage.close()
-            self.call_from_thread(self._update_header_center, "No project", "Never")
-            self.call_from_thread(self._no_project_found)
+            self._update_header_center("No project", "Never")
+            self._no_project_found()
             return
 
         snapshots = await storage.get_all_skills_latest(project.id)
@@ -222,7 +222,7 @@ class AtrophyDashboard(App):
                 dt = dt.replace(tzinfo=UTC)
             scan_time_str = dt.strftime("%Y-%m-%d %H:%M")
 
-        self.call_from_thread(self._update_header_center, project.name, scan_time_str)
+        self._update_header_center(project.name, scan_time_str)
 
         total_h = 0
         total_all = 0
@@ -245,12 +245,12 @@ class AtrophyDashboard(App):
             f"Human Score: [{pct_color}]{h_pct}%[/{pct_color}]"
             f"   🔥 {streak}-week streak"
         )
-        self.call_from_thread(self._update_header_right, header_right_text)
+        self._update_header_right(header_right_text)
 
         # Update body
-        self.call_from_thread(self._update_skills_table, snapshots)
-        self.call_from_thread(self._update_timeline, monthly_breakdown)
-        self.call_from_thread(self._update_challenges, pending_challenges)
+        self._update_skills_table(snapshots)
+        self._update_timeline(monthly_breakdown)
+        self._update_challenges(pending_challenges)
 
     def _no_project_found(self) -> None:
         """Handle case when no project is initialized."""
