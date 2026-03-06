@@ -1,0 +1,46 @@
+[project]
+name = "atrophy"
+version = "0.1.0"
+description = "Your coding skills have a half-life. atrophy measures it."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+  "typer[all]>=0.12.0",
+  "rich>=13.7.0",
+  "textual>=0.61.0",
+  "gitpython>=3.1.43",
+  "sqlalchemy[asyncio]>=2.0.30",
+  "aiosqlite>=0.20.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "tree-sitter>=0.22.0",
+  "openai>=1.30.0",
+  "anthropic>=0.28.0",
+  "httpx>=0.27.0",
+  "python-dotenv>=1.0.1",
+  "pillow>=10.3.0",
+  "qrcode[pil]>=7.4.2",
+]
+
+[project.scripts]
+atrophy = "atrophy.cli.app:app"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "S", "B", "A", "C4", "UP"]
+ignore = ["S101"]  # allow assert in tests
+
+[tool.bandit]
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
