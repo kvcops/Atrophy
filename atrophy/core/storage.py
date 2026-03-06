@@ -51,6 +51,20 @@ class Project(Base):
         String(255), nullable=True
     )
 
+class Baseline(Base):
+    """A developer's personal baseline metrics."""
+
+    __tablename__ = "baselines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), unique=True, index=True
+    )
+    avg_velocity: Mapped[float]
+    uses_conventional_commits: Mapped[bool]
+    uses_autoformatter: Mapped[bool]
+    avg_commit_size: Mapped[float]
+    computed_at: Mapped[datetime] = mapped_column(default=func.now())
 
 class Commit(Base):
     """A single git commit with AI detection scores."""
@@ -68,6 +82,7 @@ class Commit(Base):
     message: Mapped[str] = mapped_column(Text)
     additions: Mapped[int] = mapped_column(default=0)
     deletions: Mapped[int] = mapped_column(default=0)
+    session_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     ai_probability: Mapped[float] = mapped_column(default=0.5)
     classification: Mapped[str] = mapped_column(
         String(20), default="uncertain"
@@ -281,6 +296,50 @@ class Storage:
             msg = f"Failed to update last_scanned for project {project_id}: {exc}"
             raise AtrophyStorageError(msg) from exc
 
+    async def save_baseline(self, project_id: int, baseline_data: dict) -> None:
+        """Create or update a baseline record for the project."""
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(Baseline).where(Baseline.project_id == project_id)
+                    )
+                    existing = result.scalar_one_or_none()
+
+                    if existing is None:
+                        baseline = Baseline(
+                            project_id=project_id,
+                            avg_velocity=baseline_data["avg_velocity"],
+                            uses_conventional_commits=baseline_data["uses_conventional_commits"],
+                            uses_autoformatter=baseline_data["uses_autoformatter"],
+                            avg_commit_size=baseline_data["avg_commit_size"],
+                            computed_at=datetime.now(timezone.utc),
+                        )
+                        session.add(baseline)
+                    else:
+                        existing.avg_velocity = baseline_data["avg_velocity"]
+                        existing.uses_conventional_commits = baseline_data["uses_conventional_commits"]
+                        existing.uses_autoformatter = baseline_data["uses_autoformatter"]
+                        existing.avg_commit_size = baseline_data["avg_commit_size"]
+                        existing.computed_at = datetime.now(timezone.utc)
+        except AtrophyStorageError:
+            raise
+        except Exception as exc:
+            msg = f"Failed to save baseline: {exc}"
+            raise AtrophyStorageError(msg) from exc
+
+    async def get_baseline(self, project_id: int) -> Baseline | None:
+        """Look up the baseline for a project."""
+        try:
+            async with self._session_factory() as session:
+                result = await session.execute(
+                    select(Baseline).where(Baseline.project_id == project_id)
+                )
+                return result.scalar_one_or_none()
+        except Exception as exc:
+            msg = f"Failed to get baseline: {exc}"
+            raise AtrophyStorageError(msg) from exc
+
     # ── Commit operations ───────────────────────────────────────────
 
     async def upsert_commits(
@@ -325,6 +384,7 @@ class Storage:
                                 message=commit_data.get("message", ""),
                                 additions=commit_data.get("additions", 0),
                                 deletions=commit_data.get("deletions", 0),
+                                session_id=commit_data.get("session_id"),
                                 ai_probability=commit_data.get(
                                     "ai_probability", 0.5
                                 ),
@@ -349,7 +409,10 @@ class Storage:
                             )
                             session.add(commit)
                         else:
-                            # Update AI scores on existing commit
+                            # Update AI scores and session_id on existing commit
+                            existing.session_id = commit_data.get(
+                                "session_id", existing.session_id
+                            )
                             existing.ai_probability = commit_data.get(
                                 "ai_probability", existing.ai_probability
                             )

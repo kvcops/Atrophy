@@ -11,8 +11,13 @@ Treat the output as a personal wellness metric, nothing more.
 
 import math
 import re
+import statistics
+import uuid
 from collections import Counter
+from pathlib import Path
+from typing import Optional
 
+from pydantic import BaseModel
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -35,6 +40,18 @@ CONVENTIONAL_PATTERN = re.compile(
 HUMAN_MESSAGE_KEYWORDS = {
     "fixme", "todo", "why", "wtf", "finally", "ok", "test",
 }
+
+# ── Baseline Model ──────────────────────────────────────────────────
+
+class PersonalBaseline(BaseModel):
+    """Calibrated baseline metrics for a specific developer."""
+
+    avg_lines_per_commit: float
+    avg_velocity: float
+    uses_conventional_commits: bool
+    uses_autoformatter: bool
+    typical_session_length: float
+
 
 # ── AIDetector ──────────────────────────────────────────────────────
 
@@ -70,7 +87,7 @@ class AIDetector:
 
     # ── Public API ──────────────────────────────────────────────────
 
-    def analyze(self, commit: dict) -> dict:
+    def analyze(self, commit: dict, baseline: Optional[PersonalBaseline] = None) -> dict:
         """Compute all 5 signal scores and classify a single commit.
 
         The original commit dict is returned with these fields added:
@@ -82,6 +99,7 @@ class AIDetector:
             commit: A commit dict from GitScanner matching the data
                 contract (must have ``additions``, ``minutes_since_prev``,
                 ``diff_text``, ``message`` at minimum).
+            baseline: Optional PersonalBaseline object for calibrating thresholds.
 
         Returns:
             The same dict with AI detection fields added.
@@ -89,25 +107,67 @@ class AIDetector:
         diff_text = commit.get("diff_text", "")
         added_lines = self._extract_added_lines(diff_text)
 
-        velocity = self._velocity_score(
-            commit.get("additions", 0),
-            commit.get("minutes_since_prev", 0.0),
-        )
+        # Baseline & Session Context Fix
+        if "session_velocity" in commit:
+            session_velocity_val = commit["session_velocity"]
+            adds = commit.get("session_additions", 0)
+        else:
+            adds = commit.get("additions", 0)
+            mins = commit.get("minutes_since_prev", 0.5)
+            session_velocity_val = adds / max(mins, 0.5)
+
+        velocity = self._velocity_score(session_velocity_val, adds, baseline)
         burstiness = self._burstiness_score(added_lines)
         formatting = self._formatting_score(added_lines)
         message = self._message_score(commit.get("message", ""))
         entropy = self._entropy_score(added_lines)
 
+        w_vel = self.SIGNAL_WEIGHTS["velocity"]
+        w_burst = self.SIGNAL_WEIGHTS["burstiness"]
+        w_fmt = self.SIGNAL_WEIGHTS["formatting"]
+        w_msg = self.SIGNAL_WEIGHTS["message"]
+        w_ent = self.SIGNAL_WEIGHTS["entropy"]
+
+        is_squash = commit.get("is_squash", False)
+
+        if baseline:
+            if baseline.uses_conventional_commits:
+                w_msg = 0.05
+                # High score normally means conventional commit (AI). Since human
+                # does it, invert the score so it reads as human.
+                message = 1.0 - message
+
+            if baseline.uses_autoformatter:
+                w_fmt = 0.05
+
+        if is_squash:
+            w_vel = 0.05
+            w_fmt = 0.05
+
+        # Normalize weights
+        total_w = w_vel + w_burst + w_fmt + w_msg + w_ent
+        w_vel /= total_w
+        w_burst /= total_w
+        w_fmt /= total_w
+        w_msg /= total_w
+        w_ent /= total_w
+
         ai_probability = (
-            self.SIGNAL_WEIGHTS["velocity"] * velocity
-            + self.SIGNAL_WEIGHTS["burstiness"] * burstiness
-            + self.SIGNAL_WEIGHTS["formatting"] * formatting
-            + self.SIGNAL_WEIGHTS["message"] * message
-            + self.SIGNAL_WEIGHTS["entropy"] * entropy
+            w_vel * velocity
+            + w_burst * burstiness
+            + w_fmt * formatting
+            + w_msg * message
+            + w_ent * entropy
         )
+
+        if is_squash:
+            ai_probability = max(0.45, min(0.55, ai_probability))
+
         ai_probability = round(ai_probability, 4)
 
-        if ai_probability >= 0.62:
+        if is_squash:
+            classification = "uncertain"
+        elif ai_probability >= 0.62:
             classification = "ai"
         elif ai_probability <= 0.38:
             classification = "human"
@@ -128,11 +188,12 @@ class AIDetector:
         )
         return result
 
-    def analyze_batch(self, commits: list[dict]) -> list[dict]:
+    def analyze_batch(self, commits: list[dict], baseline: Optional[PersonalBaseline] = None) -> list[dict]:
         """Analyze a batch of commits with a Rich progress bar.
 
         Args:
             commits: List of commit dicts from GitScanner.
+            baseline: Optional PersonalBaseline object.
 
         Returns:
             List of analyzed commit dicts with AI detection fields.
@@ -153,7 +214,7 @@ class AIDetector:
         ) as progress:
             task = progress.add_task("Analyzing", total=len(commits))
             for commit in commits:
-                results.append(self.analyze(commit))
+                results.append(self.analyze(commit, baseline))
                 progress.advance(task)
 
         # Summary line
@@ -232,14 +293,18 @@ class AIDetector:
     # ── Signal implementations ──────────────────────────────────────
 
     @staticmethod
-    def _velocity_score(additions: int, minutes_since_prev: float) -> float:
+    def _velocity_score(
+        lpm: float, additions: int, baseline: Optional[PersonalBaseline] = None
+    ) -> float:
         """Signal 1: coding velocity (lines added per minute).
 
         High velocity suggests AI-assisted code generation.
+        Uses baseline threshold calibration.
 
         Args:
-            additions: Number of lines added in the commit.
-            minutes_since_prev: Minutes since the author's previous commit.
+            lpm: Lines added per minute for this commit's session.
+            additions: Raw number of additions to filter out tiny fixes.
+            baseline: Optional PersonalBaseline.
 
         Returns:
             Score from 0.0 (definitely human pace) to 1.0 (definitely AI pace).
@@ -248,20 +313,23 @@ class AIDetector:
         if additions < 5:
             return 0.2
 
-        effective_minutes = max(minutes_since_prev, 0.5)
-        lpm = additions / effective_minutes
+        base_10 = 10.0
+        base_40 = 40.0
+        base_80 = 80.0
 
-        if lpm >= 80:
+        if baseline and baseline.avg_velocity > 40.0:
+            scale = baseline.avg_velocity / 40.0
+            base_10 *= scale
+            base_40 *= scale
+            base_80 *= scale
+
+        if lpm >= base_80:
             return 0.95
-        if lpm >= 40:
-            # Linear interpolation: 40→0.75, 80→0.95
-            return 0.75 + (lpm - 40) / (80 - 40) * (0.95 - 0.75)
-        if lpm >= 10:
-            # Linear interpolation: 10→0.50, 40→0.75
-            return 0.50 + (lpm - 10) / (40 - 10) * (0.75 - 0.50)
-        # lpm < 10: linear down to 0.05
-        # 0→0.05, 10→0.50
-        return 0.05 + (lpm / 10) * (0.50 - 0.05)
+        if lpm >= base_40:
+            return 0.75 + (lpm - base_40) / (base_80 - base_40) * (0.95 - 0.75)
+        if lpm >= base_10:
+            return 0.50 + (lpm - base_10) / (base_40 - base_10) * (0.75 - 0.50)
+        return 0.05 + (lpm / base_10) * (0.50 - 0.05)
 
     @staticmethod
     def _burstiness_score(added_lines: list[str]) -> float:
@@ -443,3 +511,120 @@ class AIDetector:
                 # GitScanner pre-strips the '+', so these are raw added lines
                 lines.append(line)
         return lines
+
+    # ── Session & Baseline ──────────────────────────────────────────
+
+    def group_into_sessions(self, commits: list[dict], gap_minutes: float = 45.0) -> list[list[dict]]:
+        """Group commits where gap between consecutive commits < gap_minutes into sessions.
+        
+        Assigns session_id, session_duration, session_additions, and session_velocity
+        to each commit dict in the list.
+        """
+        if not commits:
+            return []
+
+        sorted_commits = sorted(commits, key=lambda c: c["timestamp"])
+        sessions = []
+        current_session = []
+
+        for commit in sorted_commits:
+            if not current_session:
+                current_session.append(commit)
+                continue
+
+            prev_commit = current_session[-1]
+            diff = commit["timestamp"] - prev_commit["timestamp"]
+            gap = diff.total_seconds() / 60.0
+
+            if gap < gap_minutes:
+                current_session.append(commit)
+            else:
+                sessions.append(current_session)
+                current_session = [commit]
+
+        if current_session:
+            sessions.append(current_session)
+
+        # Enrich commits
+        for sess in sessions:
+            sess_id = uuid.uuid4().hex
+            
+            if len(sess) > 1:
+                duration_min = (sess[-1]["timestamp"] - sess[0]["timestamp"]).total_seconds() / 60.0
+            else:
+                duration_min = max(sess[0].get("minutes_since_prev", 0.5), 0.5)
+
+            duration_min = max(duration_min, 0.5)
+            sess_additions = sum(c.get("additions", 0) for c in sess)
+            sess_velocity = sess_additions / duration_min
+
+            for c in sess:
+                c["session_id"] = sess_id
+                c["session_duration"] = duration_min
+                c["session_additions"] = sess_additions
+                c["session_velocity"] = sess_velocity
+
+        return sessions
+
+    def build_baseline(self, commits: list[dict], repo_path: str) -> PersonalBaseline:
+        """Build the PersonalBaseline from the developer's earliest 30 commits."""
+        sorted_commits = sorted(commits, key=lambda c: c["timestamp"])
+        first_30 = sorted_commits[:30]
+
+        if not first_30:
+            return PersonalBaseline(
+                avg_lines_per_commit=0.0,
+                avg_velocity=0.0,
+                uses_conventional_commits=False,
+                uses_autoformatter=False,
+                typical_session_length=0.0,
+            )
+
+        velocities = [
+            c["additions"] / max(c.get("minutes_since_prev", 0.5), 0.5)
+            for c in first_30 if c.get("additions", 0) > 0
+        ]
+        avg_velocity = statistics.median(velocities) if velocities else 0.0
+
+        conv_commits = sum(
+            1 for c in first_30
+            if re.match(r"^(feat|fix|chore|refactor|docs|style|test|perf|ci|build)(\(.+\))?!?:\s", c.get("message", ""))
+        )
+        uses_conventional_commits = (conv_commits / len(first_30)) > 0.5
+
+        uses_autoformatter = False
+        repo_dir = Path(repo_path)
+        if repo_dir.exists():
+            for fmt_file in [".ruff.toml", ".prettierrc", ".eslintrc", ".black"]:
+                if (repo_dir / fmt_file).exists():
+                    uses_autoformatter = True
+                    break
+
+            if not uses_autoformatter and (repo_dir / "pyproject.toml").exists():
+                try:
+                    content = (repo_dir / "pyproject.toml").read_text()
+                    if "[tool.ruff]" in content:
+                        uses_autoformatter = True
+                except Exception:
+                    pass
+
+        avg_lines = sum(c.get("additions", 0) for c in first_30) / len(first_30)
+
+        sessions = self.group_into_sessions(first_30)
+        session_lengths = []
+        for sess in sessions:
+            if len(sess) > 1:
+                dur = (sess[-1]["timestamp"] - sess[0]["timestamp"]).total_seconds() / 3600.0
+            else:
+                dur = 0.5
+            session_lengths.append(dur)
+            
+        typ_session_len = statistics.mean(session_lengths) if session_lengths else 0.5
+
+        return PersonalBaseline(
+            avg_lines_per_commit=avg_lines,
+            avg_velocity=avg_velocity,
+            uses_conventional_commits=uses_conventional_commits,
+            uses_autoformatter=uses_autoformatter,
+            typical_session_length=typ_session_len,
+        )

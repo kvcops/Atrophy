@@ -10,6 +10,7 @@ Tests the challenge generation pipeline including:
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -68,7 +69,7 @@ def _make_valid_challenge_json(
             "Create a comprehensive test suite for a calculator module. "
             "Cover edge cases like division by zero and overflow. "
             "Use pytest fixtures to reduce boilerplate. "
-            "Aim for 100% branch coverage."
+            "Aim for 100% branch coverage. Project files python."
         ),
         "skill_name": skill_name,
         "difficulty": difficulty,
@@ -80,6 +81,7 @@ def _make_valid_challenge_json(
         "success_criteria": (
             "All tests pass and coverage report shows 100% on the module."
         ),
+        "fallback": False,
     })
 
 
@@ -251,8 +253,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["testing", "sql_databases", "security", "extra"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 3
@@ -269,8 +271,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=[],
             language="python",
-            code_samples={},
-            top_skill="testing",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert result == []
@@ -287,8 +289,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["testing"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 1
@@ -301,8 +303,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["testing"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 1
@@ -319,8 +321,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["sql_databases"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 1
@@ -337,8 +339,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["testing"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 1
@@ -354,8 +356,8 @@ class TestGenerateChallenges:
         result = await engine.generate_challenges(
             dead_zones=["testing"],
             language="python",
-            code_samples={},
-            top_skill="error_handling",
+            repo_path=Path("."),
+            commits=[],
         )
 
         assert len(result) == 1
@@ -363,72 +365,6 @@ class TestGenerateChallenges:
         assert result[0]["skill_name"] == "testing"
         assert "hints" in result[0]
 
-
-# ── Tests: ChallengeEngine.get_code_sample ──────────────────────────
-
-
-class TestGetCodeSample:
-    """Tests for ChallengeEngine.get_code_sample."""
-
-    def test_extracts_matching_lines(self) -> None:
-        """Extracts added diff lines matching skill keywords."""
-        commits = [_make_commit(
-            diff_text=(
-                "+    assert result == 42\n"
-                "+    pytest.mark.asyncio\n"
-                "+    print('hello')\n"
-            ),
-        )]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "testing")
-        assert "assert result == 42" in sample
-        assert "pytest" in sample
-
-    def test_skips_ai_commits(self) -> None:
-        """Only looks at human-classified commits."""
-        commits = [_make_commit(
-            classification="ai",
-            diff_text="+    assert result == 42\n",
-        )]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "testing")
-        assert sample == ""
-
-    def test_returns_empty_for_unknown_skill(self) -> None:
-        """Unknown skill name returns empty string."""
-        commits = [_make_commit()]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "nonexistent_skill")
-        assert sample == ""
-
-    def test_returns_empty_when_no_matches(self) -> None:
-        """No matching keywords returns empty string."""
-        commits = [_make_commit(
-            diff_text="+    x = 1 + 2\n",
-        )]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "testing")
-        assert sample == ""
-
-    def test_truncates_long_samples(self) -> None:
-        """Samples exceeding max_chars are truncated."""
-        long_diff = "+    assert " + "x" * 500 + "\n"
-        commits = [_make_commit(diff_text=long_diff)]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "testing", max_chars=100)
-        assert len(sample) <= 120  # max_chars + truncation marker
-        assert "truncated" in sample
-
-    def test_strips_file_paths(self) -> None:
-        """Full file paths are replaced with basenames."""
-        commits = [_make_commit(
-            diff_text=(
-                '+    assert open("/home/user/secret/test_file.py")\n'
-            ),
-        )]
-        engine = ChallengeEngine(FakeProvider())
-        sample = engine.get_code_sample(commits, "testing")
-        assert "/home/user/secret" not in sample
 
 
 # ── Tests: Ollama SSRF prevention ───────────────────────────────────

@@ -48,37 +48,37 @@ class TestVelocityScore:
 
     def test_tiny_commit_returns_low_score(self, detector: AIDetector) -> None:
         """Commits with < 5 additions should always score 0.2."""
-        score = detector._velocity_score(additions=3, minutes_since_prev=1.0)
+        score = detector._velocity_score(lpm=3.0, additions=3)
         assert score == 0.2
 
     def test_high_velocity_scores_high(self, detector: AIDetector) -> None:
         """>=80 lines/min should score 0.95 (almost certainly AI)."""
         # 100 lines in 1 minute = 100 lpm
-        score = detector._velocity_score(additions=100, minutes_since_prev=1.0)
+        score = detector._velocity_score(lpm=100.0, additions=100)
         assert score == 0.95
 
     def test_medium_velocity_interpolates(self, detector: AIDetector) -> None:
         """40-80 lpm should interpolate between 0.75 and 0.95."""
         # 60 lines in 1 minute = 60 lpm (midpoint of 40-80 range)
-        score = detector._velocity_score(additions=60, minutes_since_prev=1.0)
+        score = detector._velocity_score(lpm=60.0, additions=60)
         assert 0.75 <= score <= 0.95
 
     def test_low_velocity_scores_low(self, detector: AIDetector) -> None:
         """<10 lpm should score below 0.50 (likely human pace)."""
         # 5 lines in 1 minute = 5 lpm
-        score = detector._velocity_score(additions=5, minutes_since_prev=1.0)
+        score = detector._velocity_score(lpm=5.0, additions=5)
         assert score < 0.50
 
     def test_zero_minutes_uses_floor(self, detector: AIDetector) -> None:
         """0 minutes_since_prev should use floor of 0.5 (not divide by zero)."""
-        score = detector._velocity_score(additions=50, minutes_since_prev=0.0)
+        score = detector._velocity_score(lpm=100.0, additions=50)
         # 50 / 0.5 = 100 lpm → 0.95
         assert score == 0.95
 
     def test_very_slow_approaches_005(self, detector: AIDetector) -> None:
         """Extremely slow pace should approach 0.05."""
         score = detector._velocity_score(
-            additions=10, minutes_since_prev=1000.0
+            lpm=0.01, additions=10
         )
         # 10/1000 = 0.01 lpm → near 0.05
         assert score < 0.10
@@ -86,14 +86,14 @@ class TestVelocityScore:
     def test_exactly_10_lpm(self, detector: AIDetector) -> None:
         """10 lpm should score 0.50."""
         score = detector._velocity_score(
-            additions=10, minutes_since_prev=1.0
+            lpm=10.0, additions=10
         )
         assert abs(score - 0.50) < 0.01
 
     def test_exactly_40_lpm(self, detector: AIDetector) -> None:
         """40 lpm should score 0.75."""
         score = detector._velocity_score(
-            additions=40, minutes_since_prev=1.0
+            lpm=40.0, additions=40
         )
         assert abs(score - 0.75) < 0.01
 

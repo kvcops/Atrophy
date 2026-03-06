@@ -319,6 +319,14 @@ class GitScanner:
             # We're walking backwards, so update to the older timestamp
             last_commit_time[author_key] = committed_dt
 
+        # ── Squash commit detection ────────────────────────────────
+        is_squash = self.is_likely_squash({
+            "additions": additions,
+            "deletions": deletions,
+            "message": commit.message.strip(),
+            "files_changed": files_changed,
+        })
+
         return {
             "commit_hash": commit.hexsha,
             "author_name": commit.author.name or "Unknown",
@@ -331,7 +339,34 @@ class GitScanner:
             "diff_text": diff_text,
             "minutes_since_prev": round(minutes_since_prev, 2),
             "session_additions": session_additions,
+            "is_squash": is_squash,
         }
+
+    def is_likely_squash(self, commit: dict) -> bool:
+        """Detect if a commit is likely a squash or large merge.
+
+        Args:
+            commit: A dictionary with 'additions', 'deletions', 'message',
+                and 'files_changed'.
+
+        Returns:
+            True if it matches squash heuristics.
+        """
+        additions = commit.get("additions", 0)
+        deletions = commit.get("deletions", 0)
+        msg = commit.get("message", "").lower()
+        files = commit.get("files_changed", [])
+
+        if additions > 300 and deletions > 300:
+            return True
+
+        if any(p in msg for p in ["squash", "merge", "wip"]):
+            return True
+
+        if len(files) > 20:
+            return True
+
+        return False
 
     def _extract_diff_stats(
         self,

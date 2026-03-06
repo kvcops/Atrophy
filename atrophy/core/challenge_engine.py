@@ -16,14 +16,19 @@ from atrophy.providers.base import BaseLLMProvider
 # ── System prompt ───────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-You are a coding skills coach. Generate a hands-on coding challenge that helps a
-developer practice a specific forgotten skill. The challenge must:
-- Be completable in the estimated time (not a tutorial, a real mini-task)
-- Reference the developer's actual tech stack and codebase patterns
-- Have clear success criteria the developer can verify themselves
-- NOT use the words "LeetCode", "algorithm challenge", or "interview problem"
+You are a senior software engineer running a 1:1 mentoring session.
+Your mentee is a real developer — not a student. Generate a short, practical
+coding exercise they can do in their actual project (not a toy example).
 
-Respond ONLY in valid JSON. No markdown fences. No preamble.\
+RULES:
+- The task must reference real patterns from their codebase shown below
+- Do NOT invent imaginary classes, models, or APIs not shown in the context
+- The task should be doable without running the app (a standalone function or module)
+- NO LeetCode. NO "implement a linked list". Real world only.
+- If you cannot generate a contextually accurate challenge, set "fallback": true
+  and generate a generic but honest exercise for the skill
+
+Respond in JSON only. No markdown. No preamble.\
 """
 
 # ── Required keys and their expected types ──────────────────────────
@@ -36,6 +41,7 @@ _REQUIRED_KEYS: dict[str, type] = {
     "estimated_minutes": int,
     "hints": list,
     "success_criteria": str,
+    "fallback": bool,
 }
 
 # ── Difficulty tiers ────────────────────────────────────────────────
@@ -76,27 +82,12 @@ class ChallengeEngine:
         self,
         dead_zones: list[str],
         language: str,
-        code_samples: dict[str, str],
-        top_skill: str,
+        repo_path: Path,
+        commits: list[dict],
     ) -> list[dict]:
-        """Generate up to 3 challenges for dead-zone skills.
-
-        Selects the first 3 dead zones and assigns escalating
-        difficulty tiers (easy → medium → hard). For each, calls the
-        LLM provider and sanitises the response before returning.
-
-        Args:
-            dead_zones: Skill names in the dead zone, ordered by
-                urgency (from ``SkillMapper.get_dead_zones``).
-            language: The developer's primary programming language.
-            code_samples: Mapping of ``{skill_name: sample_code}``.
-                Provided by ``get_code_sample`` from commit history.
-            top_skill: The developer's strongest skill (for contrast).
-
-        Returns:
-            List of valid challenge dicts. May be fewer than 3 if
-            the LLM fails for some prompts — never crashes.
-        """
+        from atrophy.core.context_builder import ContextBuilder
+        cb = ContextBuilder(repo_path)
+        
         # Select up to 3 dead zones
         selected = dead_zones[:3]
         if not selected:
@@ -107,13 +98,13 @@ class ChallengeEngine:
             difficulty, estimated_minutes = _DIFFICULTY_TIERS[
                 min(idx, len(_DIFFICULTY_TIERS) - 1)
             ]
-            code_sample = code_samples.get(skill_name, "")
+            context = cb.build_challenge_context(skill_name, commits, language)
+            
             user_prompt = self._build_user_prompt(
                 skill_name=skill_name,
-                language=language,
                 difficulty=difficulty,
                 estimated_minutes=estimated_minutes,
-                code_sample=code_sample,
+                context=context,
             )
 
             challenge = await self._call_and_parse(
@@ -126,118 +117,34 @@ class ChallengeEngine:
 
         return challenges
 
-    def get_code_sample(
-        self,
-        commits: list[dict],
-        skill_name: str,
-        max_chars: int = 400,
-    ) -> str:
-        """Extract a code sample from human commits for a given skill.
 
-        Searches for commits classified as human that exercised the
-        target skill. Extracts added diff lines that match skill
-        keywords and truncates to ``max_chars``.
-
-        SECURITY: File paths are stripped to basenames only — full
-        paths are never included in samples sent to the LLM.
-
-        Args:
-            commits: Analyzed commit dicts (must have
-                ``classification``, ``diff_text``, ``files_changed``).
-            skill_name: The skill to find relevant code for.
-            max_chars: Maximum characters in the returned sample.
-
-        Returns:
-            A truncated code snippet, or empty string if none found.
-        """
-        from atrophy.core.skill_mapper import SKILL_PATTERNS
-
-        pattern_def = SKILL_PATTERNS.get(skill_name)
-        if pattern_def is None:
-            return ""
-
-        keywords = pattern_def["keywords"]
-
-        # Search human commits for relevant diffs
-        for commit in commits:
-            if commit.get("classification") != "human":
-                continue
-
-            diff_text = commit.get("diff_text", "")
-            if not diff_text:
-                continue
-
-            # Extract only added lines matching skill keywords
-            relevant_lines: list[str] = []
-            for line in diff_text.splitlines():
-                # Diff added lines start with "+"
-                if not line.startswith("+"):
-                    continue
-                # Strip the leading "+" for readability
-                clean_line = line[1:]
-                if any(kw in clean_line for kw in keywords):
-                    # SECURITY: strip any full file paths to basename
-                    clean_line = self._strip_paths(clean_line)
-                    relevant_lines.append(clean_line)
-
-            if relevant_lines:
-                sample = "\n".join(relevant_lines)
-                # Truncate to max_chars
-                if len(sample) > max_chars:
-                    sample = sample[:max_chars] + "\n# ... (truncated)"
-                return sample
-
-        return ""
 
     # ── Private helpers ─────────────────────────────────────────────
 
     @staticmethod
     def _build_user_prompt(
         skill_name: str,
-        language: str,
         difficulty: str,
         estimated_minutes: int,
-        code_sample: str,
+        context: str,
     ) -> str:
-        """Build the user prompt for a single challenge request.
-
-        Args:
-            skill_name: The skill to practice.
-            language: Developer's primary language.
-            difficulty: easy / medium / hard.
-            estimated_minutes: Target completion time.
-            code_sample: Relevant code from the developer's repo.
-
-        Returns:
-            Formatted prompt string.
-        """
-        sample_section = (
-            code_sample
-            if code_sample
-            else f"No sample available — use idiomatic patterns for {language}"
-        )
         return (
-            f"Developer profile:\n"
-            f"- Primary language: {language}\n"
-            f"- Skill to practice: {skill_name}\n"
-            f"- Difficulty: {difficulty}\n"
-            f"- Time available: {estimated_minutes} minutes\n"
+            f"Skill to practice: {skill_name}\n"
+            f"Difficulty: {difficulty} (~{estimated_minutes} minutes)\n"
+            f"Developer context:\n"
+            f"{context}\n"
             f"\n"
-            f"Real code from their project (for context):\n"
-            f"{sample_section}\n"
-            f"\n"
-            f"Generate a challenge JSON object with these exact keys:\n"
-            f'{{\n'
-            f'  "title": "short catchy title (max 8 words)",\n'
-            f'  "description": "clear problem statement '
-            f'(3-4 sentences, specific task to build)",\n'
+            f"Generate:\n"
+            f"{{\n"
+            f'  "title": "max 8 words",\n'
+            f'  "description": "2-3 sentences. Must reference something from the context above.",\n'
             f'  "skill_name": "{skill_name}",\n'
             f'  "difficulty": "{difficulty}",\n'
             f'  "estimated_minutes": {estimated_minutes},\n'
-            f'  "hints": ["hint 1", "hint 2"],\n'
-            f'  "success_criteria": "one sentence describing '
-            f'how they\'ll know it\'s done"\n'
-            f'}}'
+            f'  "hints": ["hint using their actual stack", "second hint"],\n'
+            f'  "success_criteria": "one sentence they can verify",\n'
+            f'  "fallback": false\n'
+            f"}}"
         )
 
     async def _call_and_parse(
@@ -273,7 +180,22 @@ class ChallengeEngine:
             )
             cleaned = _strip_markdown_fences(raw)
             parsed = json.loads(cleaned)
-            return _validate_challenge(parsed)
+            parsed = _validate_challenge(parsed)
+            
+            # Check for fallback
+            if parsed.get("fallback", False):
+                return _fallback_challenge(skill_name, difficulty, estimated_minutes)
+            
+            # Additional check: does description reference anything from context?
+            # Find context words and check if any exist in description over length 4
+            import re
+            context_words = set(re.findall(r'\b[a-zA-Z_]{5,}\b', user_prompt.lower()))
+            desc_words = set(re.findall(r'\b[a-zA-Z_]{5,}\b', parsed["description"].lower()))
+            if not (context_words & desc_words):
+                # Probably generic, use fallback
+                return _fallback_challenge(skill_name, difficulty, estimated_minutes)
+            
+            return parsed
 
         except (ProviderError, json.JSONDecodeError, KeyError,
                 TypeError, ValueError):
@@ -391,6 +313,66 @@ def _validate_challenge(data: dict) -> dict:
     return data
 
 
+FALLBACK_CHALLENGES = {
+    "sql_databases": {
+        "easy": {
+            "title": "Write a Raw Aggregate Query",
+            "description": "Without using the ORM, write a raw SQL query that counts records grouped by a date field. Use your database's connection directly via cursor.execute().\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Use GROUP BY DATE(created_at)", "Return results as a list of dicts"],
+            "success_criteria": "Query runs without error and returns grouped counts",
+            "estimated_minutes": 20,
+            "fallback": True,
+        },
+        "medium": {
+            "title": "Build a Transaction Scope",
+            "description": "Create a context manager or decorator that wraps a database session in a transaction. Ensure it rolls back automatically if an exception occurs.\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Use session.begin()", "Catch Exception to rollback"],
+            "success_criteria": "Tests verify that raising an error rolls back the insert",
+            "estimated_minutes": 40,
+            "fallback": True,
+        },
+        "hard": {
+            "title": "Implement Keyspace Sharding",
+            "description": "Write a database routing layer that directs reads and writes to different tables or logical databases based on a user ID hash.\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Use a hashing function like md5 to determine destination", "Wrap the connection factory"],
+            "success_criteria": "Different user IDs get routed to their corresponding shards",
+            "estimated_minutes": 60,
+            "fallback": True,
+        },
+    },
+}
+
+for _s in [
+    "async_concurrency", "data_structures", "regex_parsing", "error_handling",
+    "api_design", "testing", "algorithms", "system_io", "security"
+]:
+    FALLBACK_CHALLENGES[_s] = {
+        "easy": {
+            "title": f"Basic {_s.replace('_', ' ').title()}",
+            "description": f"Refactor a small component to use better {_s.replace('_', ' ')} patterns without copying from AI.\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Review documentation for best practices", "Start with the simplest part"],
+            "success_criteria": "The component behaves identically but uses the target skill properly",
+            "estimated_minutes": 20,
+            "fallback": True,
+        },
+        "medium": {
+            "title": f"Intermediate {_s.replace('_', ' ').title()}",
+            "description": f"Design a new module that relies heavily on {_s.replace('_', ' ')} paradigms to solve a recurring issue in your code.\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Abstract common logic", "Write isolated tests first"],
+            "success_criteria": "The module integrates cleanly without regressions",
+            "estimated_minutes": 40,
+            "fallback": True,
+        },
+        "hard": {
+            "title": f"Advanced {_s.replace('_', ' ').title()}",
+            "description": f"Undertake a major refactor of your project's core to implement scalable {_s.replace('_', ' ')} patterns across the board.\n[dim](Generic challenge — add more commits to get personalized ones)[/dim]",
+            "hints": ["Draft an architecture plan", "Migrate one subsystem at a time"],
+            "success_criteria": "System is demonstrably more robust or performant",
+            "estimated_minutes": 60,
+            "fallback": True,
+        },
+    }
+
 def _fallback_challenge(
     skill_name: str, difficulty: str, estimated_minutes: int
 ) -> dict:
@@ -404,13 +386,20 @@ def _fallback_challenge(
     Returns:
         A safe, static challenge dict.
     """
+    if skill_name in FALLBACK_CHALLENGES and difficulty in FALLBACK_CHALLENGES[skill_name]:
+        chall = FALLBACK_CHALLENGES[skill_name][difficulty].copy()
+        chall["skill_name"] = skill_name
+        chall["difficulty"] = difficulty
+        return chall
+        
     return {
         "title": f"Practice {skill_name.replace('_', ' ').title()}",
         "description": (
             f"Write a small program that exercises your "
             f"{skill_name.replace('_', ' ')} skills. "
             f"Pick a real problem from your current project and solve it "
-            f"without AI assistance. Focus on understanding every line."
+            f"without AI assistance. Focus on understanding every line.\n"
+            f"[dim](Generic challenge — add more commits to get personalized ones)[/dim]"
         ),
         "skill_name": skill_name,
         "difficulty": difficulty,
@@ -423,4 +412,5 @@ def _fallback_challenge(
             "The program runs correctly and you can explain every "
             "line of code you wrote."
         ),
+        "fallback": True,
     }

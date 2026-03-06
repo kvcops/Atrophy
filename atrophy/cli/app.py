@@ -402,6 +402,16 @@ async def _run_scan(days: int, force: bool) -> None:
     # Step 4 + 5: Classify and map with live dashboard
     detector = AIDetector()
 
+    detector.group_into_sessions(commits)
+    baseline = detector.build_baseline(commits, cwd)
+    baseline_data = {
+        "avg_velocity": baseline.avg_velocity,
+        "uses_conventional_commits": baseline.uses_conventional_commits,
+        "uses_autoformatter": baseline.uses_autoformatter,
+        "avg_commit_size": baseline.avg_lines_per_commit,
+    }
+    await storage.save_baseline(project.id, baseline_data)
+
     from atrophy.config import get_settings
     from atrophy.core.skill_classifier import LLMSkillClassifier
     from atrophy.exceptions import ProviderError
@@ -443,7 +453,7 @@ async def _run_scan(days: int, force: bool) -> None:
         transient=True,
     ):
         for i, commit in enumerate(commits):
-            result = detector.analyze(commit)
+            result = detector.analyze(commit, baseline)
             analyzed.append(result)
 
             cls = result.get("classification", "uncertain")
@@ -567,15 +577,12 @@ def _print_scan_summary(
     table.add_column(min_width=24)
 
     table.add_row(
-        "Commits analyzed", f"[bold]{total}[/bold]",
+        "Skill Exercise Rate",
+        f"[green]{human_pct}[/green]",
     )
     table.add_row(
-        "Human-written",
-        f"[green]{human}[/green]  ({human_pct})",
-    )
-    table.add_row(
-        "AI-assisted",
-        f"[red]{ai}[/red]  ({ai_pct})",
+        "AI-assisted commits",
+        f"[red]{ai}[/red] ({ai_pct}) (scaffolding/boilerplate)",
     )
     table.add_row(
         "Uncertain",
@@ -583,7 +590,7 @@ def _print_scan_summary(
     )
     table.add_row("Your top skill", top_skill_display)
     table.add_row(
-        "Dead zones found",
+        "Needs Practice zones",
         f"[red]{len(dead_zones)}[/red]"
         if dead_zones
         else "[green]0[/green]",
@@ -764,6 +771,12 @@ async def _run_report(json_output: bool, share: bool) -> None:
     console.print()
     _print_coding_dna(coding_dna)
 
+    console.print(
+        "\n[dim]Note: These are statistical estimates for self-reflection only.\n"
+        "Squash commits, auto-formatters, and conventional commit tools may affect readings.\n"
+        "Baseline calibration improves accuracy over time.[/dim]"
+    )
+
     # ── Share: save report.md ───────────────────────────────────
     if share:
         _save_report_md(skill_profile, dead_zones, coding_dna)
@@ -815,7 +828,7 @@ def _print_skill_table_animated(
 
         # Status
         if skill_name in dead_zones:
-            status = Text("⚠ DEAD ZONE", style="bold red")
+            status = Text("⚡ Needs Practice", style="bold red")
         elif data.get("trend") == "up":
             status = Text("↑ rising", style="green")
         elif data.get("trend") == "down":
@@ -1390,16 +1403,11 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
 
         engine = ChallengeEngine(provider)
 
-        code_samples = {
-            skill: engine.get_code_sample(commits, skill)
-            for skill in dead_zones[:3]
-        }
-
         new_challenges = await engine.generate_challenges(
             dead_zones=dead_zones,
             language=language,
-            code_samples=code_samples,
-            top_skill=top_skill,
+            repo_path=Path(cwd),
+            commits=commits,
         )
 
         await storage.save_challenges(project.id, new_challenges)

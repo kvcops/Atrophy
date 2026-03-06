@@ -44,7 +44,7 @@ class AIRatioTimeline(Vertical):
     """Row 2 Right (40%): AI Ratio Timeline."""
 
     def compose(self) -> ComposeResult:
-        yield Label("Human vs AI Over Time", classes="panel-title")
+        yield Label("Skill Exercise Rate Over Time", classes="panel-title")
         yield Static("Loading timeline...", id="timeline-chart")
 
 
@@ -242,7 +242,7 @@ class AtrophyDashboard(App):
         )
 
         header_right_text = (
-            f"Human Score: [{pct_color}]{h_pct}%[/{pct_color}]"
+            f"Skill Exercise Rate: [{pct_color}]{h_pct}%[/{pct_color}]"
             f"   🔥 {streak}-week streak"
         )
         self._update_header_right(header_right_text)
@@ -318,7 +318,7 @@ class AtrophyDashboard(App):
                 is_dead_zone = True
 
             if is_dead_zone:
-                status = Text("DEAD ZONE", style="bold red")
+                status = Text("⚡ Needs Practice", style="bold red")
                 has_dead_zone = True
             else:
                 status = Text("—", style="dim")
