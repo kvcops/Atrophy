@@ -551,3 +551,32 @@ class TestMonthlySkillScores:
         )
         months = [entry["month"] for entry in result]
         assert months == sorted(months)
+
+
+def test_skill_mapper_sql_keywords(mapper: SkillMapper) -> None:
+    """Check explicit keyword loading for SQL functionality."""
+    commits = [
+        _make_commit(
+            classification="human",
+            diff_text="+ SELECT * FROM users\n+ OVER (PARTITION BY id)",
+            files_changed=["query.sql"],
+        )
+    ]
+    profile = mapper.map_skills(commits)
+    assert "sql_databases" in profile
+    assert profile["sql_databases"]["score"] > 0
+
+
+def test_skill_mapper_dead_zones(mapper: SkillMapper) -> None:
+    """Check older commits trigger a dead_zones flag functionally."""
+    commits = [
+        _make_commit(
+            classification="human",
+            diff_text="+ SELECT * FROM users\n+ OVER (PARTITION BY id)",
+            timestamp=datetime.now(timezone.utc) - timedelta(days=65),
+            files_changed=["query.sql"],
+        )
+    ]
+    profile = mapper.map_skills(commits)
+    dead_zones = mapper.get_dead_zones(profile)
+    assert "sql_databases" in dead_zones

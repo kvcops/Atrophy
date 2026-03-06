@@ -249,6 +249,50 @@ class TestEntropyScore:
         assert 0.0 <= score <= 1.0
 
 
+# ── Section 2: Specific Tests ──────────────────────────────────────
+
+
+class TestSpecificCommits:
+    """Explicit tests requested for the AI detector."""
+
+    def test_human_commit(self, detector: AIDetector) -> None:
+        """HUMAN commit: messy diff, slow pace -> low ai_probability."""
+        diff_text = "+def foo():   \n+    x=1\n+  y = 2\n"  # messy variable line lengths, 3 trailing spaces, mixed indent
+        commit = _make_commit(
+            message="fix",
+            additions=8,
+            minutes_since_prev=45.0,
+            diff_text=diff_text
+        )
+        result = detector.analyze(commit)
+        assert result["ai_probability"] < 0.4
+        assert result["classification"] in {"human", "uncertain"}
+
+    def test_ai_commit(self, detector: AIDetector) -> None:
+        """AI commit: uniform code, high pace -> high ai_probability."""
+        diff_text = "\n".join([f"+    x = {i}" for i in range(150)])  # perfectly uniform lines, 4-space indent
+        commit = _make_commit(
+            message="feat: add authentication middleware",
+            additions=150,
+            minutes_since_prev=0.8,
+            diff_text=diff_text
+        )
+        result = detector.analyze(commit)
+        assert result["ai_probability"] > 0.7
+        assert result["classification"] == "ai"
+
+    def test_uncertain_commit(self, detector: AIDetector) -> None:
+        """UNCERTAIN commit: middling values -> mid ai_probability."""
+        diff_text = "\n".join([f"+def do_thing_{i}():\n+    pass\n" for i in range(10)])
+        commit = _make_commit(
+            message="Update logic",
+            additions=20,
+            minutes_since_prev=10.0,
+            diff_text=diff_text
+        )
+        result = detector.analyze(commit)
+        assert 0.3 < result["ai_probability"] < 0.7
+
 # ── Full analyze() tests ───────────────────────────────────────────
 
 

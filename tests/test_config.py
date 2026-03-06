@@ -279,3 +279,34 @@ class TestConfigFilePersistence:
         assert reloaded.llm_provider == "ollama"
         assert reloaded.default_days_back == 30
         assert reloaded.ollama_model == "codellama"
+
+
+class TestConfigRules:
+    """Explicit tests for config security rules."""
+
+    def test_secretstr_never_leaks_in_str(self) -> None:
+        """SecretStr must not leak its value in str()."""
+        settings = Settings(
+            openai_api_key=SecretStr("super-secret-key-123"),
+            data_dir=Path("/tmp/.atrophy"),
+        )
+        output = str(settings)
+        assert "super-secret-key-123" not in output
+        assert "**********" in output or "SecretStr" in output
+
+    def test_save_excludes_api_keys(self, tmp_path: Path) -> None:
+        """save() must never write API keys to disk."""
+        data_dir = tmp_path / ".atrophy"
+        settings = Settings(
+            data_dir=data_dir,
+            openai_api_key=SecretStr("will-not-save"),
+            anthropic_api_key=SecretStr("also-will-not-save"),
+        )
+        config_file = settings.save()
+
+        with open(config_file) as f:
+            data = json.load(f)
+
+        assert "openai_api_key" not in data
+        assert "anthropic_api_key" not in data
+        assert "data_dir" in data

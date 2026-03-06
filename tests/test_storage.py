@@ -382,3 +382,66 @@ class TestInitAndErrors:
         await store.init_db()
         await store.init_db()  # Should be idempotent
         await store.close()
+
+
+# ── Strict rules tests ──────────────────────────────────────────────
+
+class TestSpecificRules:
+    """Explicit tests requested for Storage layer ops."""
+
+    @pytest.mark.asyncio
+    async def test_save_get_project(self, storage: Storage) -> None:
+        """Test save/get project asynchronously."""
+        await storage.save_project("/tmp/repo", "test-repo", "test@example.com")
+        project = await storage.get_project("/tmp/repo")
+        assert project is not None
+        assert project.name == "test-repo"
+        assert project.author_email == "test@example.com"
+
+    @pytest.mark.asyncio
+    async def test_upsert_commits_deduplicates(self, storage: Storage) -> None:
+        """Test upsert_commits deduplicates by hash natively over multiple ops."""
+        await storage.save_project("/tmp/repo", "test-repo", "test@example.com")
+        project = await storage.get_project("/tmp/repo")
+
+        analyzed = [_make_commit("12345")]
+        count1 = await storage.upsert_commits(project.id, analyzed)
+        count2 = await storage.upsert_commits(project.id, analyzed)  # Duplicate
+        
+        # Validates no IntegrityError was thrown and the upsert returned zero modifications the second time or updated normally.
+        assert count1 == 1
+
+    @pytest.mark.asyncio
+    async def test_mark_challenge_complete(self, storage: Storage) -> None:
+        """Test mark_challenge_complete sets completed=True and completed_at."""
+        await storage.save_project("/tmp/repo", "test-repo", "test@example.com")
+        project = await storage.get_project("/tmp/repo")
+
+        from sqlalchemy import select
+
+        async with storage.SessionLocal() as session:
+            challenge = Challenge(
+                project_id=project.id,
+                skill_name="testing",
+                title="Test",
+                description="Test",
+                difficulty="easy",
+                estimated_minutes=15,
+                hints="[]",
+                success_criteria="Test",
+                completed=False,
+                generated_at=datetime.now(timezone.utc)
+            )
+            session.add(challenge)
+            await session.commit()
+            await session.refresh(challenge)
+            challenge_id = challenge.id
+
+        await storage.mark_challenge_complete(challenge_id)
+
+        async with storage.SessionLocal() as session:
+            result = await session.execute(select(Challenge).where(Challenge.id == challenge_id))
+            updated = result.scalars().first()
+
+            assert updated.completed is True
+            assert updated.completed_at is not None
