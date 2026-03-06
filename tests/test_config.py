@@ -9,6 +9,7 @@ import pytest
 from pydantic import SecretStr
 
 from atrophy.config import Settings
+from atrophy.exceptions import ProviderError
 
 
 class TestSettingsFromEnv:
@@ -74,18 +75,18 @@ class TestSecretStrBehavior:
         assert settings.get_anthropic_key() == "sk-ant-test-key"
 
     def test_get_openai_key_raises_when_missing(self, tmp_path: Path) -> None:
-        """get_openai_key() must raise ValueError if key is None."""
+        """get_openai_key() must raise ProviderError if key is None."""
         settings = Settings(data_dir=tmp_path / ".atrophy")
-        with pytest.raises(ValueError, match="OpenAI API key not configured"):
+        with pytest.raises(ProviderError, match="OpenAI API key not configured"):
             settings.get_openai_key()
 
     def test_get_anthropic_key_raises_when_missing(
         self, tmp_path: Path
     ) -> None:
-        """get_anthropic_key() must raise ValueError if key is None."""
+        """get_anthropic_key() must raise ProviderError if key is None."""
         settings = Settings(data_dir=tmp_path / ".atrophy")
         with pytest.raises(
-            ValueError, match="Anthropic API key not configured"
+            ProviderError, match="Anthropic API key not configured"
         ):
             settings.get_anthropic_key()
 

@@ -26,7 +26,7 @@ from rich.text import Text
 
 from atrophy import __version__
 from atrophy.config import get_settings
-from atrophy.exceptions import AtrophyError
+from atrophy.exceptions import AtrophyError, ProviderError
 
 # Force UTF-8 output on Windows to avoid cp1252 encoding errors with
 # Rich markup and special characters.
@@ -1011,9 +1011,7 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
         from atrophy.core.challenge_engine import ChallengeEngine
         from atrophy.core.git_scanner import GitScanner
         from atrophy.core.skill_mapper import SkillMapper
-        from atrophy.providers.anthropic_provider import AnthropicProvider
-        from atrophy.providers.ollama_provider import OllamaProvider
-        from atrophy.providers.openai_provider import OpenAIProvider
+        from atrophy.providers import get_provider
 
         latest = await storage.get_latest_challenge_date(project.id)
         now = datetime.now(UTC)
@@ -1049,17 +1047,13 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
         }
 
         settings = get_settings()
-        if settings.llm_provider == "openai":
-            provider = OpenAIProvider()
-        elif settings.llm_provider == "anthropic":
-            provider = AnthropicProvider()
-        elif settings.llm_provider == "ollama":
-            provider = OllamaProvider()
-        else:
+        try:
+            provider = get_provider(settings)
+        except ProviderError:
             await storage.close()
             _error_panel(
                 "No LLM provider configured.\nRun "
-                "[cyan]atrophy init[/cyan] to set one up."
+                "[cyan]atrophy config[/cyan] to set one up."
             )
             raise typer.Exit(code=1)
 

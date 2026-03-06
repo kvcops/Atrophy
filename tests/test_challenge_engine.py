@@ -10,7 +10,6 @@ Tests the challenge generation pipeline including:
 
 import json
 from datetime import UTC, datetime
-from unittest.mock import patch
 
 import pytest
 
@@ -440,75 +439,44 @@ class TestOllamaSSRF:
 
     def test_remote_url_rejected(self) -> None:
         """Remote URLs are rejected with ProviderError."""
-        with patch("atrophy.providers.ollama_provider.get_settings") as mock:
-            mock.return_value.ollama_base_url = "http://evil.com:11434"
-            mock.return_value.ollama_model = "llama3.2"
+        from types import SimpleNamespace
 
-            from atrophy.providers.ollama_provider import OllamaProvider
+        from atrophy.providers.ollama_provider import OllamaProvider
 
-            with pytest.raises(ProviderError, match="SSRF"):
-                OllamaProvider()
+        settings = SimpleNamespace(
+            ollama_mode="local",
+            ollama_base_url="http://evil.com:11434",
+            ollama_model="llama3.2",
+        )
+        with pytest.raises(ProviderError, match="localhost"):
+            OllamaProvider(settings)
 
     def test_localhost_url_accepted(self) -> None:
         """Localhost URLs are accepted."""
-        with patch("atrophy.providers.ollama_provider.get_settings") as mock:
-            mock.return_value.ollama_base_url = "http://localhost:11434"
-            mock.return_value.ollama_model = "llama3.2"
+        from types import SimpleNamespace
 
-            from atrophy.providers.ollama_provider import OllamaProvider
+        from atrophy.providers.ollama_provider import OllamaProvider
 
-            # Should not raise
-            provider = OllamaProvider()
-            assert provider._base_url == "http://localhost:11434"
+        settings = SimpleNamespace(
+            ollama_mode="local",
+            ollama_base_url="http://localhost:11434",
+            ollama_model="llama3.2",
+        )
+        # Should not raise
+        provider = OllamaProvider(settings)
+        assert provider._mode == "local"
 
     def test_loopback_url_accepted(self) -> None:
         """127.0.0.1 URLs are accepted."""
-        with patch("atrophy.providers.ollama_provider.get_settings") as mock:
-            mock.return_value.ollama_base_url = "http://127.0.0.1:11434"
-            mock.return_value.ollama_model = "llama3.2"
+        from types import SimpleNamespace
 
-            from atrophy.providers.ollama_provider import OllamaProvider
-
-            provider = OllamaProvider()
-            assert provider._base_url == "http://127.0.0.1:11434"
-
-
-# ── Tests: Ollama response parsing ──────────────────────────────────
-
-
-class TestOllamaResponseParsing:
-    """Tests for Ollama NDJSON response parsing."""
-
-    def test_single_json_response(self) -> None:
-        """Parses a single JSON response (stream=false)."""
         from atrophy.providers.ollama_provider import OllamaProvider
 
-        raw = json.dumps({"response": "Hello world"})
-        assert OllamaProvider._parse_response(raw) == "Hello world"
+        settings = SimpleNamespace(
+            ollama_mode="local",
+            ollama_base_url="http://127.0.0.1:11434",
+            ollama_model="llama3.2",
+        )
+        provider = OllamaProvider(settings)
+        assert provider._mode == "local"
 
-    def test_ndjson_streaming_response(self) -> None:
-        """Concatenates fragments from NDJSON streaming response."""
-        from atrophy.providers.ollama_provider import OllamaProvider
-
-        lines = [
-            json.dumps({"response": "Hello "}),
-            json.dumps({"response": "world"}),
-            json.dumps({"response": "!", "done": True}),
-        ]
-        raw = "\n".join(lines)
-        assert OllamaProvider._parse_response(raw) == "Hello world!"
-
-    def test_empty_response_raises(self) -> None:
-        """Empty response field raises ProviderError."""
-        from atrophy.providers.ollama_provider import OllamaProvider
-
-        raw = json.dumps({"response": ""})
-        with pytest.raises(ProviderError, match="empty response"):
-            OllamaProvider._parse_response(raw)
-
-    def test_malformed_json_raises(self) -> None:
-        """Malformed JSON raises ProviderError."""
-        from atrophy.providers.ollama_provider import OllamaProvider
-
-        with pytest.raises(ProviderError, match="parse"):
-            OllamaProvider._parse_response("not json at all")

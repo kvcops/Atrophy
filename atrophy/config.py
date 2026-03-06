@@ -2,8 +2,8 @@
 
 Uses pydantic-settings v2 to load settings from environment variables
 (prefix ATROPHY_), an optional JSON config file at ~/.atrophy/config.json,
-and sensible defaults. API keys are stored as SecretStr and are NEVER
-written to disk or logged.
+an optional .env file at ~/.atrophy/.env, and sensible defaults.
+API keys are stored as SecretStr and are NEVER written to disk or logged.
 """
 
 import json
@@ -27,17 +27,28 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="ATROPHY_",
-        env_file=".env",
+        env_file=str(Path.home() / ".atrophy" / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # ── LLM Provider ────────────────────────────────────────────────
-    llm_provider: Literal["openai", "anthropic", "ollama", "none"] = "none"
+    llm_provider: Literal[
+        "openai", "anthropic", "openrouter", "ollama", "none"
+    ] = "none"
     openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
     anthropic_api_key: SecretStr | None = None
+    anthropic_model: str = "claude-haiku-4-5-20251001"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
+    ollama_mode: Literal["local", "cloud"] = "local"
+    ollama_cloud_api_key: SecretStr | None = None
+    ollama_cloud_model: str = "llama3.2:latest"
+
+    # ── OpenRouter ──────────────────────────────────────────────────
+    openrouter_api_key: SecretStr | None = None
+    openrouter_model: str = "google/gemini-flash-1.5"
 
     # ── Scan settings ───────────────────────────────────────────────
     default_days_back: int = Field(default=180, ge=7, le=3650)
@@ -70,8 +81,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_ollama_url(self) -> "Settings":
-        """SSRF guard — Ollama URL must point to localhost."""
-        if self.llm_provider == "ollama":
+        """SSRF guard — Ollama local URL must point to localhost."""
+        if self.llm_provider == "ollama" and self.ollama_mode == "local":
             allowed = (
                 self.ollama_base_url.startswith("http://localhost")
                 or self.ollama_base_url.startswith("http://127.0.0.1")
@@ -104,14 +115,16 @@ class Settings(BaseSettings):
         constructing the OpenAI client). Never store the return value.
 
         Raises:
-            ValueError: If no OpenAI API key is configured.
+            ProviderError: If no OpenAI API key is configured.
         """
+        from atrophy.exceptions import ProviderError
+
         if self.openai_api_key is None:
             msg = (
                 "OpenAI API key not configured. "
-                "Set ATROPHY_OPENAI_API_KEY or run `atrophy init`."
+                "Set ATROPHY_OPENAI_API_KEY or run: atrophy config"
             )
-            raise ValueError(msg)
+            raise ProviderError(msg)
         return self.openai_api_key.get_secret_value()
 
     def get_anthropic_key(self) -> str:
@@ -121,15 +134,53 @@ class Settings(BaseSettings):
         constructing the Anthropic client). Never store the return value.
 
         Raises:
-            ValueError: If no Anthropic API key is configured.
+            ProviderError: If no Anthropic API key is configured.
         """
+        from atrophy.exceptions import ProviderError
+
         if self.anthropic_api_key is None:
             msg = (
                 "Anthropic API key not configured. "
-                "Set ATROPHY_ANTHROPIC_API_KEY or run `atrophy init`."
+                "Set ATROPHY_ANTHROPIC_API_KEY or run: atrophy config"
             )
-            raise ValueError(msg)
+            raise ProviderError(msg)
         return self.anthropic_api_key.get_secret_value()
+
+    def get_openrouter_key(self) -> str:
+        """Return the raw OpenRouter API key string.
+
+        Only call this at the exact moment the key is needed.
+
+        Raises:
+            ProviderError: If no OpenRouter API key is configured.
+        """
+        from atrophy.exceptions import ProviderError
+
+        if self.openrouter_api_key is None:
+            msg = (
+                "ATROPHY_OPENROUTER_API_KEY not set. "
+                "Run: atrophy config"
+            )
+            raise ProviderError(msg)
+        return self.openrouter_api_key.get_secret_value()
+
+    def get_ollama_cloud_key(self) -> str:
+        """Return the raw Ollama cloud API key string.
+
+        Only call this at the exact moment the key is needed.
+
+        Raises:
+            ProviderError: If no Ollama cloud API key is configured.
+        """
+        from atrophy.exceptions import ProviderError
+
+        if self.ollama_cloud_api_key is None:
+            msg = (
+                "ATROPHY_OLLAMA_API_KEY not set. "
+                "Run: atrophy config"
+            )
+            raise ProviderError(msg)
+        return self.ollama_cloud_api_key.get_secret_value()
 
     # ── Provider validation ─────────────────────────────────────────
 
@@ -149,7 +200,7 @@ class Settings(BaseSettings):
                         False,
                         "LLM provider is set to 'openai' but "
                         "ATROPHY_OPENAI_API_KEY is not set. "
-                        "Export it or run `atrophy init`.",
+                        "Run: atrophy config",
                     )
                 return (True, "")
             case "anthropic":
@@ -158,14 +209,35 @@ class Settings(BaseSettings):
                         False,
                         "LLM provider is set to 'anthropic' but "
                         "ATROPHY_ANTHROPIC_API_KEY is not set. "
-                        "Export it or run `atrophy init`.",
+                        "Run: atrophy config",
+                    )
+                return (True, "")
+            case "openrouter":
+                if self.openrouter_api_key is None:
+                    return (
+                        False,
+                        "LLM provider is set to 'openrouter' but "
+                        "ATROPHY_OPENROUTER_API_KEY is not set. "
+                        "Run: atrophy config",
                     )
                 return (True, "")
             case "ollama":
-                # URL is already validated by _validate_ollama_url
+                if (
+                    self.ollama_mode == "cloud"
+                    and self.ollama_cloud_api_key is None
+                ):
+                    return (
+                        False,
+                        "Ollama cloud mode requires an API key. "
+                        "Set ATROPHY_OLLAMA_CLOUD_API_KEY or "
+                        "run: atrophy config",
+                    )
                 return (True, "")
             case _:
-                return (False, f"Unknown LLM provider: {self.llm_provider}")
+                return (
+                    False,
+                    f"Unknown LLM provider: {self.llm_provider}",
+                )
 
     # ── Persistence ─────────────────────────────────────────────────
 
@@ -182,7 +254,13 @@ class Settings(BaseSettings):
         # Exclude secrets and compute-only fields from serialization
         data = self.model_dump(
             mode="json",
-            exclude={"openai_api_key", "anthropic_api_key", "db_path"},
+            exclude={
+                "openai_api_key",
+                "anthropic_api_key",
+                "openrouter_api_key",
+                "ollama_cloud_api_key",
+                "db_path",
+            },
         )
         # Convert Path objects to strings for JSON serialization
         if "data_dir" in data and data["data_dir"] is not None:

@@ -1,61 +1,74 @@
-"""Ollama (local) LLM provider for atrophy.
+"""Ollama LLM provider for atrophy (local + cloud).
 
-Implements BaseLLMProvider using a local Ollama instance for
-challenge generation. URL is validated to localhost only (SSRF prevention).
-Uses httpx.AsyncClient to POST to the Ollama /api/generate endpoint and
-parses the streaming NDJSON response.
+Implements BaseLLMProvider using the official ``ollama`` Python library.
+Supports two modes:
+  - **local**: connects to a local Ollama instance (SSRF-guarded to localhost)
+  - **cloud**: connects to ollama.com's API with Bearer auth
+
+SECURITY: In local mode, the base URL is validated to start with
+``http://localhost`` or ``http://127.0.0.1`` before any request is made.
 """
 
-import json
+from __future__ import annotations
 
 import httpx
 
-from atrophy.config import get_settings
 from atrophy.exceptions import ProviderError
 from atrophy.providers.base import BaseLLMProvider
 
-_TIMEOUT_SECONDS = 60  # Local models are slower
-
 
 class OllamaProvider(BaseLLMProvider):
-    """Ollama LLM provider using a local model.
+    """Ollama LLM provider supporting local and cloud modes.
 
-    SECURITY: The base URL is validated to start with ``http://localhost``
-    or ``http://127.0.0.1`` before any request is made, preventing SSRF
-    attacks from misconfigured URLs pointing to remote servers.
+    Uses the official ``ollama`` Python library's AsyncClient for all
+    chat completions. In local mode the client points at localhost;
+    in cloud mode it points at ``https://ollama.com`` with a Bearer
+    header.
     """
 
-    def __init__(self) -> None:
-        """Initialise the provider (URL and model read from settings)."""
-        settings = get_settings()
-        self._base_url = settings.ollama_base_url
-        self._model = settings.ollama_model
-        self._validate_url()
+    def __init__(self, settings) -> None:
+        """Initialise the provider from settings.
 
-    def _validate_url(self) -> None:
-        """SSRF guard — ensure Ollama URL points to localhost only.
+        Args:
+            settings: The Settings instance containing Ollama config.
 
         Raises:
-            ProviderError: If the URL does not start with a localhost
-                prefix.
+            ProviderError: If the local base URL fails the SSRF check.
         """
-        allowed_prefixes = ("http://localhost", "http://127.0.0.1")
-        if not self._base_url.startswith(allowed_prefixes):
-            msg = (
-                "Ollama base URL must start with http://localhost or "
-                "http://127.0.0.1 (SSRF prevention). "
-                f"Got: {self._base_url}"
+        from ollama import AsyncClient
+
+        self._mode = settings.ollama_mode
+        self._model = (
+            settings.ollama_cloud_model
+            if self._mode == "cloud"
+            else settings.ollama_model
+        )
+
+        if self._mode == "local":
+            base = settings.ollama_base_url.rstrip("/")
+            # SSRF guard — local URL must point to localhost
+            if not (
+                base.startswith("http://localhost")
+                or base.startswith("http://127.0.0.1")
+            ):
+                raise ProviderError(
+                    "Ollama local base URL must be "
+                    "http://localhost or http://127.0.0.1"
+                )
+            self._client = AsyncClient(host=base)
+
+        else:
+            # Cloud: official Ollama cloud API via ollama.com
+            cloud_key = settings.get_ollama_cloud_key()
+            self._client = AsyncClient(
+                host="https://ollama.com",
+                headers={"Authorization": f"Bearer {cloud_key}"},
             )
-            raise ProviderError(msg)
 
     async def complete(
         self, system: str, user: str, max_tokens: int = 800
     ) -> str:
-        """Return completion text from local Ollama instance.
-
-        Sends a POST to ``/api/generate`` with ``stream: false`` for
-        simplicity, but also handles streaming NDJSON responses from
-        older Ollama versions.
+        """Return completion text from Ollama (local or cloud).
 
         Args:
             system: The system prompt.
@@ -69,106 +82,114 @@ class OllamaProvider(BaseLLMProvider):
         Raises:
             ProviderError: If the API call fails for any reason.
         """
-        # Re-validate URL every call as an extra safety measure
-        self._validate_url()
-
-        url = f"{self._base_url.rstrip('/')}/api/generate"
-        payload = {
-            "model": self._model,
-            "system": system,
-            "prompt": user,
-            "stream": False,
-            "options": {
-                "num_predict": max_tokens,
-            },
-        }
-
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(_TIMEOUT_SECONDS)
-            ) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                return self._parse_response(response.text)
-
-        except httpx.TimeoutException as exc:
-            msg = (
-                f"Ollama request timed out after {_TIMEOUT_SECONDS}s. "
-                f"Is Ollama running at {self._base_url}?"
+            response = await self._client.chat(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                options={"num_predict": max_tokens},
             )
-            raise ProviderError(msg) from exc
-
-        except httpx.HTTPStatusError as exc:
-            msg = (
-                f"Ollama returned HTTP {exc.response.status_code}. "
-                f"Is the model '{self._model}' pulled? "
-                f"Try: ollama pull {self._model}"
-            )
-            raise ProviderError(msg) from exc
-
-        except httpx.ConnectError as exc:
-            msg = (
-                f"Cannot connect to Ollama at {self._base_url}. "
-                "Is Ollama running? Start it with: ollama serve"
-            )
-            raise ProviderError(msg) from exc
-
-        except ProviderError:
-            raise
+            return response["message"]["content"]
 
         except Exception as exc:
-            msg = f"Unexpected error calling Ollama: {type(exc).__name__}"
-            raise ProviderError(msg) from exc
+            err = str(exc).lower()
+            if self._mode == "local" and "connection refused" in err:
+                raise ProviderError(
+                    "Cannot connect to Ollama. Is it running?\n"
+                    "Start with: ollama serve"
+                ) from exc
+            if "unauthorized" in err or "401" in err:
+                raise ProviderError(
+                    "Ollama cloud auth failed. Check your API key at:\n"
+                    "https://ollama.com/settings/keys"
+                ) from exc
+            raise ProviderError(
+                f"Ollama {self._mode} error: {exc}"
+            ) from exc
 
-    @staticmethod
-    def _parse_response(raw: str) -> str:
-        """Parse Ollama response, handling both single JSON and NDJSON.
+    # ── Model Discovery ──────────────────────────────────────────
 
-        Ollama may return either:
-        - A single JSON object with a ``response`` key (stream=false)
-        - Multiple newline-delimited JSON objects (streaming mode)
+    @classmethod
+    async def list_local_models(
+        cls, base_url: str = "http://localhost:11434"
+    ) -> list[dict]:
+        """List models installed on the local Ollama instance.
+
+        ``GET {base_url}/api/tags`` — returns [] silently if Ollama
+        is not running.
 
         Args:
-            raw: The raw response body text.
+            base_url: Local Ollama base URL.
 
         Returns:
-            The concatenated completion text.
+            List of model dicts with name, size_gb, parameter_size,
+            and family fields. Sorted by size ascending.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{base_url}/api/tags")
+                resp.raise_for_status()
+                raw = resp.json().get("models", [])
+
+            result: list[dict] = []
+            for m in raw:
+                size_gb = round(m.get("size", 0) / 1_073_741_824, 1)
+                details = m.get("details", {})
+                result.append({
+                    "name": m["name"],
+                    "size_gb": size_gb,
+                    "parameter_size": details.get(
+                        "parameter_size", "?"
+                    ),
+                    "family": details.get("family", "?"),
+                })
+            result.sort(key=lambda x: x["size_gb"])
+            return result
+        except Exception:
+            return []  # Ollama not running — handled in UI
+
+    @classmethod
+    async def list_cloud_models(cls, api_key: str) -> list[dict]:
+        """List models available on Ollama's cloud.
+
+        ``GET https://ollama.com/api/tags`` with Bearer auth.
+
+        Args:
+            api_key: Ollama cloud API key from
+                https://ollama.com/settings/keys.
+
+        Returns:
+            List of model dicts with name field.
 
         Raises:
-            ProviderError: If the response cannot be parsed.
+            ProviderError: If auth fails or the request errors.
         """
-        lines = raw.strip().splitlines()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://ollama.com/api/tags",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("models", [])
 
-        # Single JSON response (stream=false)
-        if len(lines) == 1:
-            try:
-                data = json.loads(lines[0])
-                text = data.get("response", "")
-                if not text:
-                    msg = "Ollama returned an empty response."
-                    raise ProviderError(msg)
-                return text  # noqa: TRY300
-            except json.JSONDecodeError as exc:
-                msg = "Failed to parse Ollama response as JSON."
-                raise ProviderError(msg) from exc
+            return [{"name": m["name"]} for m in raw]
 
-        # NDJSON streaming response — concatenate all response fragments
-        fragments: list[str] = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                fragment = data.get("response", "")
-                if fragment:
-                    fragments.append(fragment)
-            except json.JSONDecodeError:
-                # Skip malformed lines in the stream
-                continue
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                raise ProviderError(
+                    "Invalid Ollama API key. Get one at: "
+                    "https://ollama.com/settings/keys"
+                ) from exc
+            raise ProviderError(
+                f"Ollama cloud model list error: {exc}"
+            ) from exc
 
-        if not fragments:
-            msg = "Ollama returned no content in the streamed response."
-            raise ProviderError(msg)
-
-        return "".join(fragments)
+        except Exception as exc:
+            raise ProviderError(
+                f"Could not reach ollama.com: {exc}"
+            ) from exc
