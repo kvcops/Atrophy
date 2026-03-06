@@ -1,6 +1,6 @@
 """atrophy CLI — Typer application with all top-level commands.
 
-Provides commands: init, scan, report, challenge, dashboard.
+Provides commands: init, scan, report, challenge, config, dashboard.
 
 Security:
     - Email input validated by regex before storing.
@@ -14,17 +14,26 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from atrophy import __version__
+from atrophy.cli.output import (
+    console,
+    show_banner,
+    show_error,
+    show_info,
+    show_success,
+)
 from atrophy.config import get_settings
 from atrophy.exceptions import AtrophyError, ProviderError
 
@@ -33,8 +42,6 @@ from atrophy.exceptions import AtrophyError, ProviderError
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-
-console = Console()
 
 EMAIL_PATTERN = re.compile(
     r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
@@ -61,52 +68,6 @@ def _get_storage():
 
     settings = get_settings()
     return Storage(settings.db_path)
-
-
-def _error_panel(message: str) -> None:
-    """Print an error message in a styled red panel.
-
-    Args:
-        message: The error text to display.
-    """
-    console.print(
-        Panel(
-            f"[bold red]{message}[/bold red]",
-            title="❌ Error",
-            border_style="red",
-        )
-    )
-
-
-def _success_panel(message: str) -> None:
-    """Print a success message in a styled green panel.
-
-    Args:
-        message: The success text to display.
-    """
-    console.print(
-        Panel(
-            message,
-            title="✅ Done",
-            border_style="green",
-        )
-    )
-
-
-def _info_panel(message: str, title: str = "ℹ️  Info") -> None:
-    """Print an info message in a styled blue panel.
-
-    Args:
-        message: The info text to display.
-        title: Panel title.
-    """
-    console.print(
-        Panel(
-            message,
-            title=title,
-            border_style="blue",
-        )
-    )
 
 
 def _detect_email() -> str | None:
@@ -192,6 +153,8 @@ def init(
     ] = None,
 ) -> None:
     """Initialize atrophy tracking for the current git repository."""
+    show_banner()
+
     from atrophy.cli.onboarding import run_onboarding
 
     # Step 1: Run onboarding wizard
@@ -201,10 +164,9 @@ def init(
     cwd = Path.cwd().resolve()
     git_dir = cwd / ".git"
     if not git_dir.exists():
-        _error_panel(
-            f"Not a git repository: {cwd}\n\n"
-            "Run [cyan]git init[/cyan] first, or "
-            "[cyan]cd[/cyan] into an existing repo."
+        show_error(
+            f"Not a git repository: {cwd}",
+            hint="Run `git init` first, or cd into an existing repo.",
         )
         raise typer.Exit(code=1)
 
@@ -224,9 +186,9 @@ def init(
 
     # Step 5: Validate email format (SECURITY)
     if not _validate_email(email):
-        _error_panel(
-            f"Invalid email format: [cyan]{email}[/cyan]\n"
-            "Expected format: user@domain.tld"
+        show_error(
+            f"Invalid email format: {email}",
+            hint="Expected format: user@domain.tld",
         )
         raise typer.Exit(code=1)
 
@@ -236,7 +198,7 @@ def init(
     try:
         asyncio.run(_init_project(storage, str(cwd), project_name, email))
     except AtrophyError as exc:
-        _error_panel(str(exc))
+        show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
     # Step 7: Save author_email to settings
@@ -245,8 +207,8 @@ def init(
     settings.save()
 
     # Step 8: Success panel
-    _success_panel(
-        f"[bold green]atrophy initialized[/bold green]\n\n"
+    show_success(
+        f"[bold]atrophy initialized[/bold]\n\n"
         f"  Project:   [cyan]{project_name}[/cyan]\n"
         f"  Email:     [cyan]{email}[/cyan]\n"
         f"  Data dir:  [cyan]{settings.data_dir}[/cyan]\n\n"
@@ -296,15 +258,93 @@ def scan(
     ] = False,
 ) -> None:
     """Scan git history and analyze commits for AI patterns."""
+    show_banner()
     try:
         asyncio.run(_run_scan(days, force))
     except AtrophyError as exc:
-        _error_panel(str(exc))
+        show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
 
+def _build_scan_left_panel(
+    processed: int,
+    total: int,
+    phase: str,
+    current_msg: str,
+) -> Panel:
+    """Build the left panel for the live scan dashboard.
+
+    Args:
+        processed: Number of commits processed so far.
+        total: Total commits to process.
+        phase: Current phase description.
+        current_msg: Current commit message snippet.
+
+    Returns:
+        A styled Rich Panel.
+    """
+    bar_width = 30
+    ratio = processed / total if total else 0
+    filled = int(ratio * bar_width)
+    empty = bar_width - filled
+    bar = f"[cyan]{'█' * filled}[/cyan][dim]{'░' * empty}[/dim]"
+
+    body = (
+        f"  {bar}  {processed:,} / {total:,}\n"
+        f"  Phase: [bold]{phase}[/bold]\n"
+        f"  Current: [dim]{current_msg[:48]}[/dim]"
+    )
+    return Panel(
+        body,
+        title="[bold]📡 Scanning commits[/bold]",
+        border_style="cyan",
+    )
+
+
+def _build_scan_right_panel(
+    human: int, ai: int, uncertain: int, top_skill: str,
+    dead_count: int,
+) -> Panel:
+    """Build the right stats panel for the live scan dashboard.
+
+    Args:
+        human: Human commit count so far.
+        ai: AI commit count so far.
+        uncertain: Uncertain commit count so far.
+        top_skill: Current top skill name.
+        dead_count: Number of dead zones so far.
+
+    Returns:
+        A styled Rich Panel.
+    """
+    total = human + ai + uncertain
+    h_pct = int(human / total * 100) if total else 0
+    a_pct = int(ai / total * 100) if total else 0
+    u_pct = int(uncertain / total * 100) if total else 0
+
+    def mini_bar(pct: int, color: str) -> str:
+        """Build a tiny 10-char bar."""
+        filled = pct // 10
+        empty = 10 - filled
+        return f"[{color}]{'█' * filled}[/{color}][dim]{'░' * empty}[/dim]"
+
+    body = (
+        f"  Human so far:   {mini_bar(h_pct, 'green')}  {h_pct}%\n"
+        f"  AI so far:      {mini_bar(a_pct, 'red')}  {a_pct}%\n"
+        f"  Uncertain:      {mini_bar(u_pct, 'yellow')}  {u_pct}%\n"
+        f"\n"
+        f"  Top skill: [cyan]{top_skill}[/cyan]\n"
+        f"  Dead zones: [red]{dead_count}[/red]"
+    )
+    return Panel(
+        body,
+        title="[bold]📊 Live Stats[/bold]",
+        border_style="blue",
+    )
+
+
 async def _run_scan(days: int, force: bool) -> None:
-    """Execute the full scan pipeline.
+    """Execute the full scan pipeline with live dashboard.
 
     Args:
         days: Number of days of history to scan.
@@ -322,9 +362,9 @@ async def _run_scan(days: int, force: bool) -> None:
     project = await storage.get_project(cwd)
     if project is None:
         await storage.close()
-        _error_panel(
-            "No project found for this directory.\n"
-            "Run [cyan]atrophy init[/cyan] first."
+        show_error(
+            "No project found for this directory.",
+            hint="Run `atrophy init` first.",
         )
         raise typer.Exit(code=1)
 
@@ -344,27 +384,98 @@ async def _run_scan(days: int, force: bool) -> None:
                 return
 
     # Step 3: Run GitScanner
-    console.print()
-    _info_panel(
-        f"Scanning [cyan]{days}[/cyan] days of git history…",
-        title="📡 Git Scan",
-    )
     scanner = GitScanner(
         cwd, days_back=days, author_email=project.author_email
     )
     commits = scanner.scan_commits()
 
     if not commits:
-        _error_panel("No commits found. Is this the right repo?")
+        show_error(
+            "No commits found. Is this the right repo?",
+            hint="Check the --days flag or your git email.",
+        )
         await storage.close()
         raise typer.Exit(code=1)
 
-    # Step 4: Run AIDetector
-    detector = AIDetector()
-    analyzed = detector.analyze_batch(commits)
+    total = len(commits)
 
-    # Step 5: Run SkillMapper
+    # Step 4 + 5: Classify and map with live dashboard
+    detector = AIDetector()
     mapper = SkillMapper()
+
+    analyzed: list[dict] = []
+    live_human = 0
+    live_ai = 0
+    live_uncertain = 0
+    live_top_skill = "—"
+    live_dead_count = 0
+
+    layout = Layout()
+    layout.split_row(
+        Layout(name="left", ratio=1),
+        Layout(name="right", ratio=1),
+    )
+
+    layout["left"].update(
+        _build_scan_left_panel(0, total, "Starting…", "")
+    )
+    layout["right"].update(
+        _build_scan_right_panel(0, 0, 0, "—", 0)
+    )
+
+    with Live(
+        layout, console=console, refresh_per_second=4,
+        transient=True,
+    ):
+        for i, commit in enumerate(commits):
+            result = detector.analyze(commit)
+            analyzed.append(result)
+
+            cls = result.get("classification", "uncertain")
+            if cls == "human":
+                live_human += 1
+            elif cls == "ai":
+                live_ai += 1
+            else:
+                live_uncertain += 1
+
+            # Update dashboard every 50 commits or at the end
+            if (i + 1) % 50 == 0 or (i + 1) == total:
+                # Compute intermediate skill profile
+                human_commits = [
+                    c for c in analyzed
+                    if c.get("classification") == "human"
+                ]
+                if human_commits:
+                    sp = mapper.map_skills(human_commits)
+                    strongest = mapper.get_strongest_skills(sp)
+                    live_top_skill = (
+                        strongest[0] if strongest else "—"
+                    )
+                    live_dead_count = len(
+                        mapper.get_dead_zones(sp)
+                    )
+
+                phase = (
+                    "Classifying commits…"
+                    if (i + 1) < total
+                    else "Finalising…"
+                )
+                msg_snippet = commit.get("message", "")[:48]
+
+                layout["left"].update(
+                    _build_scan_left_panel(
+                        i + 1, total, phase, msg_snippet,
+                    )
+                )
+                layout["right"].update(
+                    _build_scan_right_panel(
+                        live_human, live_ai, live_uncertain,
+                        live_top_skill, live_dead_count,
+                    )
+                )
+
+    # Step 5: Final skill mapping
     skill_profile = mapper.map_skills(analyzed)
     dead_zones = mapper.get_dead_zones(skill_profile)
     top_skills = mapper.get_strongest_skills(skill_profile)
@@ -386,7 +497,9 @@ async def _run_scan(days: int, force: bool) -> None:
 
     # Step 8: Print summary
     stats = detector.get_summary_stats(analyzed)
-    _print_scan_summary(stats, top_skills, dead_zones, skill_profile)
+    _print_scan_summary(
+        stats, top_skills, dead_zones, skill_profile,
+    )
 
 
 def _print_scan_summary(
@@ -410,7 +523,9 @@ def _print_scan_summary(
 
     human_pct = f"{human / total * 100:.1f}%" if total else "0%"
     ai_pct = f"{ai / total * 100:.1f}%" if total else "0%"
-    uncertain_pct = f"{uncertain / total * 100:.1f}%" if total else "0%"
+    uncertain_pct = (
+        f"{uncertain / total * 100:.1f}%" if total else "0%"
+    )
 
     # Top skill with emoji and score
     top_skill_display = "—"
@@ -434,7 +549,9 @@ def _print_scan_summary(
     table.add_column(style="bold", min_width=20)
     table.add_column(min_width=24)
 
-    table.add_row("Commits analyzed", f"[bold]{total}[/bold]")
+    table.add_row(
+        "Commits analyzed", f"[bold]{total}[/bold]",
+    )
     table.add_row(
         "Human-written",
         f"[green]{human}[/green]  ({human_pct})",
@@ -450,9 +567,13 @@ def _print_scan_summary(
     table.add_row("Your top skill", top_skill_display)
     table.add_row(
         "Dead zones found",
-        f"[red]{len(dead_zones)}[/red]" if dead_zones else "[green]0[/green]",
+        f"[red]{len(dead_zones)}[/red]"
+        if dead_zones
+        else "[green]0[/green]",
     )
-    table.add_row("Data stored at", f"[dim]{settings.data_dir}[/dim]")
+    table.add_row(
+        "Data stored at", f"[dim]{settings.data_dir}[/dim]",
+    )
 
     console.print()
     console.print(table)
@@ -484,15 +605,17 @@ def report(
     ] = False,
 ) -> None:
     """Generate a skill atrophy report."""
+    if not json_output:
+        show_banner()
     try:
         asyncio.run(_run_report(json_output, share))
     except AtrophyError as exc:
-        _error_panel(str(exc))
+        show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
 
 async def _run_report(json_output: bool, share: bool) -> None:
-    """Load data and render the report.
+    """Load data and render the report with animated reveal.
 
     Args:
         json_output: If True, dump JSON to stdout.
@@ -508,10 +631,9 @@ async def _run_report(json_output: bool, share: bool) -> None:
     project = await storage.get_project(cwd)
     if project is None:
         await storage.close()
-        _error_panel(
-            "No project found. "
-            "Run [cyan]atrophy init[/cyan] then "
-            "[cyan]atrophy scan[/cyan] first."
+        show_error(
+            "No project found.",
+            hint="Run `atrophy init` then `atrophy scan` first.",
         )
         raise typer.Exit(code=1)
 
@@ -519,9 +641,9 @@ async def _run_report(json_output: bool, share: bool) -> None:
     snapshots = await storage.get_all_skills_latest(project.id)
     if not snapshots:
         await storage.close()
-        _error_panel(
-            "No scan data found. "
-            "Run [cyan]atrophy scan[/cyan] first."
+        show_error(
+            "No scan data found.",
+            hint="Run `atrophy scan` first.",
         )
         raise typer.Exit(code=1)
 
@@ -531,11 +653,15 @@ async def _run_report(json_output: bool, share: bool) -> None:
 
     # Load monthly breakdown
     monthly_raw = await storage.get_setting("monthly_breakdown")
-    monthly_breakdown = json.loads(monthly_raw) if monthly_raw else {}
+    monthly_breakdown = (
+        json.loads(monthly_raw) if monthly_raw else {}
+    )
 
     # If no stored monthly, compute from coding_dna or use empty
     if not monthly_breakdown and coding_dna:
-        monthly_breakdown = coding_dna.get("monthly_breakdown", {})
+        monthly_breakdown = coding_dna.get(
+            "monthly_breakdown", {}
+        )
 
     await storage.close()
 
@@ -588,20 +714,27 @@ async def _run_report(json_output: bool, share: bool) -> None:
         console.print_json(json.dumps(output, default=str))
         return
 
-    # ── Section 1: Skill Profile Table ──────────────────────────
+    # ── Section 1: Animated Skill Profile Table ─────────────────
     console.print()
-    _print_skill_table(skill_profile, dead_zones)
+    _print_skill_table_animated(skill_profile, dead_zones)
 
-    # ── Section 2: AI Ratio (monthly chart) ─────────────────────
+    # ── Section 1.5: ASCII Skill Radar ──────────────────────────
+    time.sleep(0.1)
+    _print_skill_radar(skill_profile, dead_zones)
+
+    # ── Section 2: Animated AI Ratio Timeline ───────────────────
     if monthly_breakdown:
+        time.sleep(0.1)
         console.print()
-        _print_monthly_chart(monthly_breakdown)
+        _print_monthly_chart_animated(monthly_breakdown)
 
-    # ── Section 3: Dead Zones ───────────────────────────────────
+    # ── Section 3: Dead Zones (flash effect) ────────────────────
+    time.sleep(0.1)
     console.print()
-    _print_dead_zones(skill_profile, dead_zones)
+    _print_dead_zones_flash(skill_profile, dead_zones)
 
     # ── Section 4: Coding DNA ───────────────────────────────────
+    time.sleep(0.1)
     console.print()
     _print_coding_dna(coding_dna)
 
@@ -610,25 +743,16 @@ async def _run_report(json_output: bool, share: bool) -> None:
         _save_report_md(skill_profile, dead_zones, coding_dna)
 
 
-def _print_skill_table(
-    skill_profile: dict, dead_zones: list[str]
+def _print_skill_table_animated(
+    skill_profile: dict, dead_zones: list[str],
 ) -> None:
-    """Print Section 1: Skill Profile as a Rich table.
+    """Print Section 1: Skill Profile with rows appearing one at a time.
 
     Args:
         skill_profile: Skill name → data dict.
         dead_zones: List of dead zone skill names.
     """
-    table = Table(
-        title="🧬 Skill Profile",
-        title_style="bold white",
-        border_style="cyan",
-    )
-    table.add_column("Skill", style="bold", min_width=20)
-    table.add_column("Score", min_width=12)
-    table.add_column("Bar", min_width=20)
-    table.add_column("Status", min_width=14)
-    table.add_column("Last Used", min_width=14)
+    now = datetime.now(UTC)
 
     # Sort by score descending
     sorted_skills = sorted(
@@ -637,8 +761,8 @@ def _print_skill_table(
         reverse=True,
     )
 
-    now = datetime.now(UTC)
-
+    # Build rows first
+    rows: list[tuple] = []
     for skill_name, data in sorted_skills:
         score = data["score"]
         emoji = data.get("emoji", "")
@@ -652,7 +776,9 @@ def _print_skill_table(
         else:
             score_style = "red"
 
-        score_text = Text(f"{score:5.1f}", style=f"bold {score_style}")
+        score_text = Text(
+            f"{score:5.1f}", style=f"bold {score_style}",
+        )
 
         # Bar
         bar_filled = int(score / 5)  # 0–20 chars
@@ -684,77 +810,171 @@ def _print_skill_table(
                 last_text = Text("yesterday", style="green")
             elif days_ago <= 30:
                 last_text = Text(
-                    f"{days_ago}d ago", style="green"
+                    f"{days_ago}d ago", style="green",
                 )
             elif days_ago <= 60:
                 last_text = Text(
-                    f"{days_ago}d ago", style="yellow"
+                    f"{days_ago}d ago", style="yellow",
                 )
             else:
                 last_text = Text(
-                    f"{days_ago}d ago", style="red"
+                    f"{days_ago}d ago", style="red",
                 )
 
-        table.add_row(
+        rows.append((
             f"{emoji} {skill_name}",
             score_text,
             bar,
             status,
             last_text,
-        )
+        ))
 
+    # Animate: add rows one by one with delay
+    with Live(console=console, refresh_per_second=20) as live:
+        table = Table(
+            title="🧬 Skill Profile",
+            title_style="bold white",
+            border_style="cyan",
+        )
+        table.add_column("Skill", style="bold", min_width=20)
+        table.add_column("Score", min_width=12)
+        table.add_column("Bar", min_width=20)
+        table.add_column("Status", min_width=14)
+        table.add_column("Last Used", min_width=14)
+
+        for row in rows:
+            table.add_row(*row)
+            live.update(table)
+            time.sleep(0.05)
+
+        # Final flash
+        time.sleep(0.15)
     console.print(table)
 
 
-def _print_monthly_chart(monthly_breakdown: dict) -> None:
-    """Print Section 2: Monthly AI ratio chart.
+def _print_skill_radar(
+    skill_profile: dict, dead_zones: list[str],
+) -> None:
+    """Print a mini ASCII skill radar / star visualization.
+
+    Shows top 6 skills radiating from a center point "YOU",
+    with dead zones marked with dotted lines and ⚠.
 
     Args:
-        monthly_breakdown: Dict of "YYYY-MM" → {human, ai, uncertain}.
+        skill_profile: Skill name → data dict.
+        dead_zones: Dead zone skill names.
     """
+    sorted_skills = sorted(
+        skill_profile.items(),
+        key=lambda x: x[1]["score"],
+        reverse=True,
+    )
+
+    # Take top 6 skills for the radar
+    radar_skills = sorted_skills[:6]
+    if len(radar_skills) < 3:
+        return  # Not enough data
+
+    # Pad to 6
+    while len(radar_skills) < 6:
+        radar_skills.append(("—", {"score": 0}))
+
+    # Layout: 6 directions
+    # Positions: top, top-right, bottom-right, bottom,
+    #            bottom-left, top-left
+    names = [s[0] for s in radar_skills]
+    scores = [s[1]["score"] for s in radar_skills]
+
+    # Build the radar as styled text
+    def _arm(
+        name: str, score: float, is_dead: bool,
+    ) -> str:
+        """Generate arm label."""
+        length = int(score / 20) + 1  # 1-5 chars
+        if is_dead:
+            line = "┄" * length
+            return (
+                f"[red]{line} {name} ← ⚠ DEAD[/red]"
+            )
+        line = "━" * length
+        return f"[cyan]{line} {name}[/cyan]"
+
+    top = names[0]
+    top_dead = top in dead_zones
+    right = names[1]
+    right_dead = right in dead_zones
+    bottom = names[2]
+    bottom_dead = bottom in dead_zones
+    left = names[3]
+    left_dead = left in dead_zones
+    tr = names[4]
+    tr_dead = tr in dead_zones
+    bl = names[5]
+    bl_dead = bl in dead_zones
+
+    # Simple 10-line radar
+    lines = [
+        "",
+        f"              {_arm(top, scores[0], top_dead)}",
+        "                \u2502",
+        (
+            f"   {_arm(tr, scores[4], tr_dead)}"
+            f" \u2500\u2500\u2524"
+        ),
+        "                \u2502",
+        (
+            f"   {_arm(left, scores[3], left_dead)}"
+            f" \u2500\u2500\u253c\u2500\u2500 "
+            f"{_arm(right, scores[1], right_dead)}"
+        ),
+        "                \u2502",
+        (
+            f"   {_arm(bl, scores[5], bl_dead)}"
+            f" \u2500\u2500\u2524"
+        ),
+        "                \u2502",
+        f"              {_arm(bottom, scores[2], bottom_dead)}",
+        "",
+    ]
+
     console.print(
         Panel(
-            _build_monthly_bars(monthly_breakdown),
-            title="📈 Monthly Human vs AI Ratio",
-            border_style="blue",
+            "\n".join(lines),
+            title="[bold]🎯 Skill Radar[/bold]",
+            border_style="magenta",
         )
     )
 
 
-def _build_monthly_bars(monthly_breakdown: dict) -> str:
-    """Build ASCII bar chart of monthly human ratios.
+def _print_monthly_chart_animated(
+    monthly_breakdown: dict,
+) -> None:
+    """Print Section 2: Monthly AI ratio with animated bars.
+
+    Each month's bar "fills in" left to right with a tiny delay.
 
     Args:
-        monthly_breakdown: Month → counts dict.
-
-    Returns:
-        Formatted multi-line string.
+        monthly_breakdown: Dict of "YYYY-MM" → {human, ai, uncertain}.
     """
-    lines: list[str] = []
     sorted_months = sorted(monthly_breakdown.keys())
+    valid_months: list[tuple[str, int, str]] = []
 
     for month in sorted_months:
         counts = monthly_breakdown[month]
-        if isinstance(counts, dict):
-            human = counts.get("human", 0)
-            total = (
-                human
-                + counts.get("ai", 0)
-                + counts.get("uncertain", 0)
-            )
-        else:
+        if not isinstance(counts, dict):
             continue
-
+        human = counts.get("human", 0)
+        total = (
+            human
+            + counts.get("ai", 0)
+            + counts.get("uncertain", 0)
+        )
         if total == 0:
             continue
 
         ratio = human / total
         pct = int(ratio * 100)
-        bar_len = 24
-        filled = int(ratio * bar_len)
-        empty = bar_len - filled
 
-        # Color based on ratio
         if ratio >= 0.70:
             color = "green"
         elif ratio >= 0.50:
@@ -762,19 +982,58 @@ def _build_monthly_bars(monthly_breakdown: dict) -> str:
         else:
             color = "red"
 
-        bar = "█" * filled + "░" * empty
-        line = f"  {month}  [{color}]{bar}[/{color}]  {pct}% human"
-        if ratio < 0.55:
-            line += "  [red]← declining[/red]"
-        lines.append(line)
+        valid_months.append((month, pct, color))
 
-    return "\n".join(lines) if lines else "[dim]No monthly data yet.[/dim]"
+    if not valid_months:
+        return
+
+    console.print(
+        Panel(
+            "",
+            title=(
+                "[bold]📈 Monthly Human vs AI Ratio"
+                "[/bold]"
+            ),
+            border_style="blue",
+        )
+    )
+
+    # Clear panel and animate each bar
+    for month, pct, color in valid_months:
+        bar_max = 24
+        filled = int(pct / 100 * bar_max)
+
+        # Animate the bar filling
+        for step in range(1, filled + 1):
+            empty = bar_max - step
+            bar = "█" * step + "░" * empty
+            line = (
+                f"\r  {month}  [{color}]{bar}"
+                f"[/{color}]  {pct}% human"
+            )
+            console.print(line, end="")
+            time.sleep(0.02)
+
+        # Final line with declining marker
+        suffix = ""
+        if pct < 55:
+            suffix = "  [red]← declining[/red]"
+        console.print(
+            f"\r  {month}  [{color}]{'█' * filled}"
+            f"{'░' * (bar_max - filled)}[/{color}]"
+            f"  {pct}% human{suffix}"
+        )
+
+    console.print()
 
 
-def _print_dead_zones(
-    skill_profile: dict, dead_zones: list[str]
+def _print_dead_zones_flash(
+    skill_profile: dict, dead_zones: list[str],
 ) -> None:
-    """Print Section 3: Dead Zones in a red panel.
+    """Print Section 3: Dead Zones with a flash effect.
+
+    Prints the panel, clears it, then reprints with red border
+    to create a "blink" effect.
 
     Args:
         skill_profile: Skill name → data dict.
@@ -792,8 +1051,9 @@ def _print_dead_zones(
         return
 
     now = datetime.now(UTC)
-    lines = [
-        "[bold]Skills you haven't exercised in 45+ days:[/bold]\n"
+    body_lines = [
+        "[bold]Skills you haven't exercised "
+        "in 45+ days:[/bold]\n",
     ]
     for skill_name in dead_zones:
         data = skill_profile.get(skill_name, {})
@@ -804,15 +1064,26 @@ def _print_dead_zones(
         else:
             if ls.tzinfo is None:
                 ls = ls.replace(tzinfo=UTC)
-            days = (now - ls).days
-            ago = f"last used: {days} days ago"
-        lines.append(f"  [red]•[/red]  {emoji} {skill_name} ({ago})")
+            days_val = (now - ls).days
+            ago = f"last used: {days_val} days ago"
+        body_lines.append(
+            f"  [red]•[/red]  {emoji} {skill_name} ({ago})"
+        )
+
+    body = "\n".join(body_lines)
+
+    # Flash effect: dim → bright red
+    dim_panel = Panel(
+        body, title="🎯 Dead Zones", border_style="dim",
+    )
+    with Live(dim_panel, console=console, transient=True):
+        time.sleep(0.15)
 
     console.print(
         Panel(
-            "\n".join(lines),
-            title="🎯 Dead Zones",
-            border_style="red",
+            body,
+            title="[bold red]🎯 Dead Zones[/bold red]",
+            border_style="bright_red",
         )
     )
 
@@ -884,8 +1155,12 @@ def _save_report_md(
         score = data["score"]
         ls = data.get("last_seen")
         ls_str = ls.strftime("%Y-%m-%d") if ls else "never"
-        badge = " ⚠️ DEAD ZONE" if name in dead_zones else ""
-        lines.append(f"| {name} | {score:.1f}{badge} | {ls_str} |")
+        badge = (
+            " ⚠️ DEAD ZONE" if name in dead_zones else ""
+        )
+        lines.append(
+            f"| {name} | {score:.1f}{badge} | {ls_str} |"
+        )
 
     if dead_zones:
         lines.append("\n## Dead Zones\n")
@@ -897,24 +1172,28 @@ def _save_report_md(
             else:
                 if ls.tzinfo is None:
                     ls = ls.replace(tzinfo=UTC)
-                days = (now - ls).days
-                ago = f"{days} days ago"
+                d = (now - ls).days
+                ago = f"{d} days ago"
             lines.append(f"- **{name}** — {ago}")
 
     if coding_dna:
         lines.append("\n## Coding DNA\n")
         lines.append(
-            f"- Primary language: {coding_dna.get('primary_language', '?')}"
+            "- Primary language: "
+            f"{coding_dna.get('primary_language', '?')}"
         )
         lines.append(
-            f"- Coding style: {coding_dna.get('coding_style', '?')}"
+            "- Coding style: "
+            f"{coding_dna.get('coding_style', '?')}"
         )
         lines.append(
             f"- AI ratio: {coding_dna.get('ai_ratio', 0):.1%}"
         )
         top = coding_dna.get("top_skills", [])
         if top:
-            lines.append(f"- Top skills: {', '.join(top)}")
+            lines.append(
+                f"- Top skills: {', '.join(top)}"
+            )
 
     lines.append(
         "\n---\n*Generated by [atrophy]"
@@ -922,13 +1201,15 @@ def _save_report_md(
     )
 
     report_path = Path.cwd() / "report.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
-    _success_panel(
+    report_path.write_text(
+        "\n".join(lines), encoding="utf-8",
+    )
+    show_success(
         f"Report saved to [cyan]{report_path}[/cyan]"
     )
 
 
-# ── Stub commands (not yet implemented) ─────────────────────────────
+# ── COMMAND: atrophy challenge ──────────────────────────────────────
 
 
 @app.command()
@@ -950,10 +1231,11 @@ def challenge(
     ] = None,
 ) -> None:
     """Get a coding challenge to exercise a decaying skill."""
+    show_banner()
     try:
         asyncio.run(_run_challenge(generate, done))
     except AtrophyError as exc:
-        _error_panel(str(exc))
+        show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
 async def _run_challenge(generate: bool, done: int | None) -> None:
@@ -970,8 +1252,9 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
     project = await storage.get_project(cwd)
     if project is None:
         await storage.close()
-        _error_panel(
-            "No project found. Run [cyan]atrophy init[/cyan] first."
+        show_error(
+            "No project found.",
+            hint="Run `atrophy init` first.",
         )
         raise typer.Exit(code=1)
 
@@ -981,20 +1264,20 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
             await storage.mark_challenge_complete(done)
         except AtrophyError as exc:
             await storage.close()
-            _error_panel(str(exc))
+            show_error(str(exc))
             raise typer.Exit(code=1) from exc
 
         streak = await storage.get_streak(project.id)
         msg_lines = [
-            f"[bold green]Challenge #{done} marked complete![/bold green]",
-            f"Current streak: [cyan]{streak} weeks[/cyan]"
+            f"Challenge #{done} marked complete!",
+            f"Current streak: {streak} weeks",
         ]
         if streak >= 7:
             msg_lines.append(
-                "\n[bold orange3]🔥 On fire! You're unstoppable![/bold orange3]"
+                "\n🔥 On fire! You're unstoppable!"
             )
 
-        _success_panel("\n".join(msg_lines))
+        show_success("\n".join(msg_lines))
 
         pending = await storage.get_pending_challenges(project.id)
         if not pending:
@@ -1031,9 +1314,9 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
         snapshots = await storage.get_all_skills_latest(project.id)
         if not snapshots:
             await storage.close()
-            _error_panel(
-                "No scan data found. "
-                "Run [cyan]atrophy scan[/cyan] first."
+            show_error(
+                "No scan data found.",
+                hint="Run `atrophy scan` first.",
             )
             raise typer.Exit(code=1)
 
@@ -1051,11 +1334,11 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
             provider = get_provider(settings)
         except ProviderError:
             await storage.close()
-            _error_panel(
-                "No LLM provider configured.\nRun "
-                "[cyan]atrophy config[/cyan] to set one up."
+            show_error(
+                "No LLM provider configured.",
+                hint="Run `atrophy config` to set one up.",
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # Load coding DNA
         dna_raw = await storage.get_setting("coding_dna")
@@ -1066,9 +1349,9 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
         top_skill = top_skills[0] if top_skills else "general_programming"
 
         console.print()
-        _info_panel(
+        show_info(
+            "🧠 AI Challenge Engine",
             "Generating personalised challenges…",
-            title="🧠 AI Challenge Engine"
         )
 
         scanner = GitScanner(
@@ -1152,10 +1435,40 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
 @app.command()
 def dashboard() -> None:
     """Launch the interactive TUI dashboard."""
+    show_banner()
     from atrophy.tui.dashboard import AtrophyDashboard
 
     app_instance = AtrophyDashboard()
     app_instance.run()
+
+
+@app.command()
+def config() -> None:
+    """Configure your LLM provider and model."""
+    show_banner()
+
+    from atrophy.cli.onboarding import _configure_provider
+
+    settings = get_settings()
+    current = settings.llm_provider
+
+    console.print(
+        Panel(
+            f"Current provider: [bold cyan]{current}[/bold cyan]",
+            title="[bold]⚙️  Configuration[/bold]",
+            border_style="blue",
+        )
+    )
+    console.print()
+
+    _configure_provider()
+
+    # Reload and show updated
+    updated = get_settings()
+    show_success(
+        f"Provider set to "
+        f"[bold]{updated.llm_provider}[/bold]"
+    )
 
 
 @app.command()
@@ -1269,20 +1582,20 @@ def share(
 
         # Ensure it has a .png extension
         if safe_output.suffix.lower() != ".png":
-            _error_panel("Output file must have a .png extension.")
+            show_error("Output file must have a .png extension.")
             raise typer.Exit(code=1)
 
         # Ensure it writes into the current working directory hierarchy
         if not safe_output.is_relative_to(cwd):
-            _error_panel(
-                "Security Check Failed: Output path must be within the "
-                "current working directory."
+            show_error(
+                "Security Check Failed: Output path must "
+                "be within the current working directory."
             )
             raise typer.Exit(code=1)
 
         asyncio.run(_run_share(safe_output))
     except AtrophyError as exc:
-        _error_panel(str(exc))
+        show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
 
@@ -1298,7 +1611,10 @@ async def _run_share(safe_output: Path) -> None:
     project = await storage.get_project(cwd)
     if not project:
         await storage.close()
-        _error_panel("No project found. Run [cyan]atrophy init[/cyan] first.")
+        show_error(
+            "No project found.",
+            hint="Run `atrophy init` first.",
+        )
         raise typer.Exit(code=1)
 
     snapshots = await storage.get_all_skills_latest(project.id)
@@ -1489,5 +1805,5 @@ async def _run_share(safe_output: Path) -> None:
     except Exception as exc:
         raise AtrophyError(f"Failed to save share card: {exc}") from exc
 
-    _success_panel(f"Saved {safe_output} — share it on Twitter/X!")
+    show_success(f"Saved {safe_output} \u2014 share it on Twitter/X!")
 
