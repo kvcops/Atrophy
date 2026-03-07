@@ -1,6 +1,6 @@
 [project]
 name = "atrophy"
-version = "0.1.1"
+version = "0.1.4"
 description = "Your coding skills have a half-life. atrophy measures it."
 authors = [
   { name = "Vamsi Krishna", email = "vamsikv28@gmail.com" }
@@ -8,33 +8,71 @@ authors = [
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
-keywords = ["developer-tools", "ai", "git", "productivity", "skills", "cli"]
-classifiers = [
-    "Development Status :: 4 - Beta"
+
+keywords = [
+"developer-tools",
+"ai",
+"git",
+"productivity",
+"skills",
+"cli"
 ]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Environment :: Console",
+  "Topic :: Software Development"
+]
+
 dependencies = [
-  "typer[all]>=0.12.0",
-  "rich>=13.7.0",
-  "textual>=0.61.0",
-  "gitpython>=3.1.43",
-  "sqlalchemy[asyncio]>=2.0.30",
-  "aiosqlite>=0.20.0",
-  "pydantic>=2.7.0",
-  "pydantic-settings>=2.3.0",
-  "tree-sitter-language-pack>=0.3.0",
-  "openai>=1.30.0",
-  "anthropic>=0.28.0",
-  "httpx>=0.27.0",
-  "ollama>=0.4.0",
-  "python-dotenv>=1.0.1",
-  "pillow>=10.3.0",
-  "qrcode[pil]>=7.4.2",
-  "fastapi>=0.135.1",
-  "uvicorn>=0.41.0",
+"typer>=0.12.0",
+"rich>=13.7.0",
+"textual>=0.61.0",
+"gitpython>=3.1.43",
+"sqlalchemy[asyncio]>=2.0.30",
+"aiosqlite>=0.20.0",
+"pydantic>=2.7.0",
+"pydantic-settings>=2.3.0",
+"tree-sitter-language-pack>=0.3.0",
+"openai>=1.30.0",
+"anthropic>=0.28.0",
+"httpx>=0.27.0",
+"ollama>=0.4.0",
+"python-dotenv>=1.0.1",
+"pillow>=10.3.0",
+"qrcode[pil]>=7.4.2",
+"fastapi>=0.135.1",
+"uvicorn>=0.41.0"
 ]
 
 [project.scripts]
 atrophy = "atrophy.cli.app:app"
+
+[project.optional-dependencies]
+dev = [
+"bandit>=1.9.4",
+"pip-audit>=2.10.0",
+"pre-commit>=4.5.1",
+"pytest>=9.0.2",
+"pytest-asyncio>=1.3.0",
+"ruff>=0.15.5"
+]
+
+[project.urls]
+Homepage = "https://github.com/kvcops/Atrophy"
+Repository = "https://github.com/kvcops/Atrophy"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["atrophy*"]
 
 [tool.ruff]
 target-version = "py311"
@@ -42,7 +80,7 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "S", "B", "A", "C4", "UP"]
-ignore = ["S101"]  # allow assert in tests
+ignore = ["S101"]
 
 [tool.bandit]
 skips = ["B101"]
@@ -50,24 +88,3 @@ skips = ["B101"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-packages = ["atrophy"]
-
-[project.optional-dependencies]
-dev = [
-    "bandit>=1.9.4",
-    "pip-audit>=2.10.0",
-    "pre-commit>=4.5.1",
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "ruff>=0.15.5",
-]
-
-[project.urls]
-Homepage = "https://github.com/kvcops/Atrophy"
-Repository = "https://github.com/kvcops/Atrophy"
