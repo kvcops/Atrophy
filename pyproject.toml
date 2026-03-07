@@ -2,6 +2,9 @@
 name = "atrophy"
 version = "0.1.0"
 description = "Your coding skills have a half-life. atrophy measures it."
+authors = [
+  { name = "Vamsi Krishna", email = "vamsikv28@gmail.com" }
+]
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,8 +52,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["atrophy"]
 
 [project.optional-dependencies]
 dev = [
