@@ -1,557 +1,638 @@
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=venom&height=280&text=ATROPHY&fontSize=110&color=0:8B00FF,50:9932CC,100:4B0082&fontColor=ffffff&stroke=9932CC&strokeWidth=3&animation=fadeIn&desc=Your%20coding%20skills%20have%20a%20half-life.%20We%20measure%20it.&descSize=20&descAlignY=78&fontAlignY=45" width="100%" />
+  <img src="https://capsule-render.vercel.app/api?type=venom&height=300&text=ATROPHY&fontSize=120&color=0:8B00FF,50:9932CC,100:4B0082&fontColor=ffffff&stroke=9932CC&strokeWidth=3&animation=fadeIn&desc=Your%20coding%20skills%20have%20a%20half-life.%20atrophy%20measures%20it.&descSize=19&descAlignY=78&fontAlignY=45" width="100%" />
 </p>
 
-<p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=17&duration=2800&pause=900&color=B060FF&center=true&vCenter=true&multiline=false&repeat=true&width=680&height=45&lines=🧬+Analyze+your+git+history.+Expose+your+blind+spots.;💪+Win+back+the+skills+you've+silently+handed+to+AI.;🔬+The+honest+mirror+for+the+AI-assisted+developer.;📊+Track+your+Coding+Fingerprint%E2%84%A2+over+time." alt="Typing SVG" />
-</p>
 
 <br/>
 
 <p align="center">
-  <a href="https://pypi.org/p/atrophy"><img src="https://img.shields.io/pypi/v/atrophy?style=for-the-badge&logo=pypi&logoColor=white&color=8B00FF&labelColor=12001f" alt="PyPI"/></a>&nbsp;
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white&labelColor=12001f" alt="Python"/>&nbsp;
-  <img src="https://img.shields.io/badge/Tree--sitter-AST%20Powered-FF6B6B?style=for-the-badge&labelColor=12001f" alt="Tree-sitter"/>&nbsp;
-  <img src="https://img.shields.io/badge/Linter-Ruff-FCC21B?style=for-the-badge&logo=python&logoColor=black&labelColor=12001f" alt="Ruff"/>&nbsp;
-  <img src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=12001f" alt="MIT"/>&nbsp;
-  <img src="https://img.shields.io/badge/Powered%20by-uv-DE5FE9?style=for-the-badge&logoColor=white&labelColor=12001f" alt="uv"/>
+  <a href="https://pypi.org/p/atrophy">
+    <img src="https://img.shields.io/pypi/v/atrophy?style=for-the-badge&logo=pypi&logoColor=white&color=8B00FF&labelColor=12001f" alt="PyPI"/>
+  </a>&nbsp;
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white&labelColor=12001f"/>&nbsp;
+  <img src="https://img.shields.io/badge/Powered%20by-uv-DE5FE9?style=for-the-badge&logoColor=white&labelColor=12001f"/>&nbsp;
+  <img src="https://img.shields.io/badge/AST-Tree--sitter-FF6B6B?style=for-the-badge&labelColor=12001f"/>&nbsp;
+  <img src="https://img.shields.io/badge/TUI-Textual-9932CC?style=for-the-badge&labelColor=12001f"/>&nbsp;
+  <img src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=12001f"/>
 </p>
 
 <p align="center">
-  <a href="#-the-silent-problem">🚨 Problem</a> &nbsp;·&nbsp;
-  <a href="#-the-solution">💡 Solution</a> &nbsp;·&nbsp;
-  <a href="#-key-features">✨ Features</a> &nbsp;·&nbsp;
+  <a href="#-the-problem-nobody-talks-about">🚨 Problem</a> &nbsp;·&nbsp;
+  <a href="#-what-atrophy-does">💡 What It Does</a> &nbsp;·&nbsp;
+  <a href="#-how-it-works">⚙️ How It Works</a> &nbsp;·&nbsp;
   <a href="#-installation">🚀 Install</a> &nbsp;·&nbsp;
-  <a href="#%EF%B8%8F-quickstart">⚡ Quickstart</a> &nbsp;·&nbsp;
-  <a href="#-the-10-disciplines">🔬 Science</a> &nbsp;·&nbsp;
+  <a href="#-quickstart-2-minutes">⚡ Quickstart</a> &nbsp;·&nbsp;
+  <a href="#-the-10-skill-disciplines">🔬 Skills</a> &nbsp;·&nbsp;
+  <a href="#-llm-providers">🔌 Providers</a> &nbsp;·&nbsp;
   <a href="#-faq">❓ FAQ</a>
 </p>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-## 🚨 The Silent Problem
+## 🚨 The Problem Nobody Talks About
 
-<img align="right" width="160" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Anxious%20Face%20with%20Sweat.png"/>
+<img align="right" width="155" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Anxious%20Face%20with%20Sweat.png"/>
 
-> *"We all felt it happen. At first, AI was just a faster autocomplete — a way to skip boilerplate. Then came the era of zero-friction development."*
+You use Cursor. You use Copilot. You use Claude. You are shipping faster than ever — PRs merging, tickets closing, metrics looking great.
 
-You are **shipping features faster than ever.** Your PRs are getting merged. Your velocity charts look incredible.
-
-But in the quiet moments between prompts, there's a creeping realization:
+But something quiet is happening underneath all of that.
 
 ```
-❓  When was the last time you wrote a complex regex from scratch?
-❓  How long does it take you to implement a SQL window function now?
-❓  Could you reverse a binary tree today — on a whiteboard, alone?
+❓  When did you last write a regex without pasting it into a chat window?
+❓  Can you still write a raw SQL GROUP BY query from memory?
+❓  If your AI tool broke right now — could you debug the async race condition yourself?
 ```
 
-You're outsourcing the friction. **And friction is where learning happens.**
+AI tools are genuinely incredible. But here is what nobody says out loud:
 
-Your fundamental, raw engineering skills are slowly, silently **atrophying** — and nobody is tracking it.
+> **Every time AI does the hard part for you, your brain skips that rep. And skipped reps lead to atrophy.**
+
+You are outsourcing the friction. Friction is where learning happens. Your skills are quietly wasting away — and until now, there was no tool to measure it, show it to you, or help you fight it.
+
+That is what `atrophy` is for.
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-## 💡 The Solution
+## 💡 What atrophy Does
 
-<img align="left" width="150" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Alien%20Monster.png"/>
+<img align="left" width="145" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Alien%20Monster.png"/>
 
-&nbsp;&nbsp;**`atrophy`** is the honest mirror you didn't know you needed.
+&nbsp;&nbsp;`atrophy` connects to your local git history and does four things:
 
-&nbsp;&nbsp;It quietly analyzes your **git commit history — 100% locally** — to measure exactly which skills you're still exercising and which ones you've handed over to AI.
+&nbsp;&nbsp;**1. Measures what YOU actually wrote** — using statistical signals, it separates commits you personally wrote from commits that were clearly AI-generated.
 
-&nbsp;&nbsp;It doesn't judge. It doesn't report to your boss. It doesn't stop you from using AI.
+&nbsp;&nbsp;**2. Maps your skill health** — it tracks 10 engineering disciplines (SQL, algorithms, testing, security, etc.) and scores how actively you exercise each one yourself.
 
-&nbsp;&nbsp;It tracks your **Coding Fingerprint™**, and delivers hyper-targeted mini-challenges designed to rebuild the specific muscles you're losing — one commit at a time.
+&nbsp;&nbsp;**3. Shows you the decay** — a beautiful terminal dashboard reveals which skills are going dark and how fast, with a month-by-month timeline.
+
+&nbsp;&nbsp;**4. Fights back for you** — every week, it generates 3 personalized coding challenges targeting your dead zones, using real patterns from your own codebase. Not LeetCode. Not generic tutorials. Your forgotten skills, in your actual stack.
 
 <br clear="left"/>
-<br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
-
-<br/>
-
-## ✨ Key Features
+**The key thing:** Everything runs 100% locally on your machine. Your source code never leaves your computer. `atrophy` only reads your git history — it never writes to your repo, never uploads your code, and never phones home.
 
 <br/>
 
-<table>
-<tr>
-<td width="50%" valign="top">
-<h3 align="center">🕵️ 3-Layer Skill Detection Engine</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Layer%201-Tree--sitter%20AST-8B00FF?style=flat-square&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Layer%202-LLM%20Semantic-9932CC?style=flat-square&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Layer%203-Behavioral%20AI-B060FF?style=flat-square&labelColor=1a003a"/>
-</p>
-
-Not just grep. Not just AI guessing. A **triple-layer intelligence stack**:
-
-- 🌳 **Tree-sitter AST** — structural code analysis
-- 🤖 **LLM Categorization** — semantic intent detection
-- 🧠 **Context-Aware AI** — behavioral pattern modeling
-
-Together, they understand *what you actually coded* vs. *what you copy-pasted from a chat window.*
-</td>
-<td width="50%" valign="top">
-<h3 align="center">📊 Your Coding Fingerprint™</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Tracks-Languages%20%26%20Frameworks-FF6B6B?style=flat-square&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Tracks-AI%20Assist%20Ratio-FF8C42?style=flat-square&labelColor=1a003a"/>
-</p>
-
-A living, breathing portrait of your engineering identity:
-
-- 📈 Strongest frameworks & languages
-- 🕐 Most active coding hours
-- 🤝 Exact AI-assistance ratio per discipline
-- 📉 Skill decay curves over time
-- 🏆 Breakthrough moments & regressions
-
-*No two fingerprints are alike.*
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<h3 align="center">💪 Targeted Skill Workouts</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Triggers%20at-45%2B%20days%20inactive-E74C3C?style=flat-square&labelColor=1a003a"/>
-</p>
-
-Identifies **"Skills to Revisit"** — domains untouched for **45+ days** — and generates highly personalized, context-aware coding challenges scoped to:
-
-- *Your* specific codebase
-- *Your* language & patterns
-- *Your* weak spots
-
-This isn't LeetCode. This is **physical therapy for your engineering brain.**
-</td>
-<td width="50%" valign="top">
-<h3 align="center">🎉 Positive Momentum System</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Mode-Coach%2C%20Not%20Critic-22C55E?style=flat-square&labelColor=1a003a"/>
-</p>
-
-Atrophy **celebrates your wins** automatically when you:
-
-- ✅ Clear a long-dormant skill dead zone
-- 📈 Improve your human-coded ratio
-- 🔥 Maintain a streak in a difficult discipline
-
-Atrophy is your **personal trainer**, not a micromanager.
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<h3 align="center">📓 Weekly Developer Digests</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Export-Obsidian-7C3AED?style=flat-square&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Export-Notion-ffffff?style=flat-square&logoColor=black&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Export-Markdown-0EA5E9?style=flat-square&labelColor=1a003a"/>
-</p>
-
-Export beautiful **Markdown digests** directly to your tools of choice. One command. Instant insight. Beautiful output.
-
-```bash
-atrophy digest --open
-```
-</td>
-<td width="50%" valign="top">
-<h3 align="center">🖥️ Stunning Terminal UI</h3>
-<p align="center">
-  <img src="https://img.shields.io/badge/Built%20with-Textual-9932CC?style=flat-square&labelColor=1a003a"/>
-  <img src="https://img.shields.io/badge/Zero-Browser%20Required-FF6B6B?style=flat-square&labelColor=1a003a"/>
-</p>
-
-A gorgeous, interactive, **animated TUI** featuring:
-
-- Live skill radar visualization
-- Animated decay charts
-- Color-coded discipline heatmap
-- Real-time AI-assist ratio gauge
-
-```bash
-atrophy dashboard
-```
-</td>
-</tr>
-</table>
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+## ⚙️ How It Works
+
+### Step 1 — Reading Your Git History
+
+When you run `atrophy scan`, it walks your entire commit history for the past 180 days (configurable). It reads the actual diff of each commit — the lines of code added, removed, and changed. It filters out noise automatically: dependency lock files, auto-generated code, minified files, and merge commits are all ignored so they don't skew your results.
+
+### Step 2 — Separating Human Commits from AI Commits
+
+This is the statistical heart of `atrophy`. It uses **5 signals** combined into a single probability score for each commit:
+
+| Signal | What It Looks At | Why It Works |
+|---|---|---|
+| **Commit Velocity** | Lines added per minute vs. your personal average | AI pastes 200 lines in 8 seconds. Humans type |
+| **Burstiness Score** | How uniform or varied your line lengths are | AI code is suspiciously uniform. Human code is messy |
+| **Entropy Analysis** | Character distribution patterns in the code | AI produces "expected" code. Humans are quirky |
+| **Formatter Presence** | Whether formatting is machine-perfect | Running ruff/black yourself? atrophy accounts for it |
+| **Message Depth** | Commit message patterns and specificity | "fix" at 2am is you. "feat: add JWT middleware" at 2am is Cursor |
+
+**Important:** atrophy builds a **Personal Baseline** from your oldest commits — from before you were using AI heavily. It calibrates all signals to *your* natural pace, not some generic average. A developer who types fast and always uses conventional commits won't be falsely flagged as AI-assisted. The tool adapts to you.
+
+This is a probabilistic mirror for self-reflection. It is not a verdict, not a judge, and not accurate enough to evaluate anyone else. Treat it as honest data about yourself.
+
+### Step 3 — Mapping Skills with 3-Layer Detection
+
+Once `atrophy` knows which commits you personally wrote, it figures out *which skills* you exercised. It uses three layers in priority order:
+
+**Layer 1 — Tree-sitter AST Analysis (most accurate)**
+Tree-sitter is a real code parser — the same technology that powers VS Code's syntax highlighting. `atrophy` uses it to build an Abstract Syntax Tree of your code changes and count actual code structures: async functions, try/catch blocks, SQL calls, custom classes, test assertions, and more. It understands code structure, not just text. It works for Python, TypeScript, JavaScript, Go, Rust, Java, Ruby, C++, and more.
+
+**Layer 2 — LLM Semantic Classification (for complex or unknown cases)**
+For recent commits (last 90 days) where the language is less common or the skill is ambiguous, `atrophy` can optionally send a short anonymized snippet to your configured LLM to ask "what skill category is this?" — using your own API key, direct to the provider. No middleman.
+
+**Layer 3 — Keyword Fallback (always available, zero cost)**
+If tree-sitter doesn't support the language and you have no LLM configured, `atrophy` falls back to smart keyword scanning — but only inside actual code (not comments or string literals), using language-specific comment strippers.
+
+### Step 4 — Generating Your Weekly Challenges
+
+Every week, `atrophy challenge --generate` picks your top 3 dead zones and asks your configured LLM to create personalized exercises. Before sending anything to the LLM, `atrophy` builds a rich context package:
+- The most-committed files in your project (by name, not content)
+- A short sample of real code you personally wrote in that skill area
+- Your detected tech stack (frameworks, dependencies)
+- Your primary language
+
+The result: challenges that say "add a raw aggregate query to your existing User model using the patterns already in your codebase" — not "implement a binary search tree."
+
+If the LLM returns something generic or hallucinated, `atrophy` detects this automatically and swaps in a hand-crafted fallback challenge. You always get something useful.
+
+<br/>
+
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
 ## 🚀 Installation
 
-<img align="right" width="120" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Rocket.png"/>
+<img align="right" width="115" src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Rocket.png"/>
 
-We strongly recommend **[`uv`](https://github.com/astral-sh/uv)** — the blazing-fast Python package manager written in Rust — to install `atrophy` globally without polluting your system environment.
+We recommend **[`uv`](https://github.com/astral-sh/uv)** — a Rust-powered Python package manager that is 100x faster than pip and keeps `atrophy` isolated from your system Python.
 
 ```bash
+# Install uv first (if you don't have it)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install atrophy globally
 uv tool install atrophy
 ```
 
-> 💡 **Don't have `uv` yet?**
-> ```bash
-> curl -LsSf https://astral.sh/uv/install.sh | sh
-> ```
-
-**Prefer pip?**
+**Prefer plain pip?**
 ```bash
 pip install atrophy
 ```
 
+**Verify the install:**
+```bash
+atrophy --version
+```
+
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-## ⚡️ Quickstart
-
-> Get from zero to insights in **under 2 minutes.**
+## ⚡ Quickstart (2 Minutes)
 
 ```bash
-# ① Initialize — connect Atrophy to your repo (one-time setup)
+# ① Go to any project with git history
+cd your-project
+
+# ② One-time setup — connects atrophy to this repo
+#    It will ask for your git email and optionally an LLM provider
 atrophy init
 
-# ② Scan — analyze your git history & classify every commit
+# ③ Scan the last 180 days of commits (takes 10–60 seconds depending on repo size)
 atrophy scan
 
-# ③ Dashboard — launch the interactive animated terminal UI
+# ④ Read your full skill report in the terminal
+atrophy report
+
+# ⑤ Launch the interactive animated dashboard
 atrophy dashboard
 
-# ④ Challenge — generate personalized exercises for rusty skills
+# ⑥ Generate this week's personalized skill challenges
 atrophy challenge --generate
 
-# ⑤ Digest — export your beautiful weekly report
+# ⑦ Export your weekly digest to Markdown (paste into Obsidian, Notion, etc.)
 atrophy digest --open
 ```
 
 <details>
-<summary><b>📸 What does <code>atrophy dashboard</code> look like?</b></summary>
+<summary><b>📸 What does the terminal dashboard look like?</b></summary>
 <br>
 
 ```
-╔══════════════════════════════════════════════════════════════════╗
-║  🧬 ATROPHY  ·  Coding Fingerprint  ·  last scan: 2 min ago     ║
-╠════════════════════╦═════════════════════════════════════════════╣
-║  SKILL HEALTH      ║  AI ASSIST RATIO                           ║
-║                    ║                                            ║
-║  🧠 Algorithms     ║  ████████░░░░░░░░  48% human               ║
-║  ▓▓▓▓▓▓▓░  72%    ║                                            ║
-║                    ║  ⚠ Skills to Revisit (45d+ untouched):    ║
-║  🔣 Regex          ║  • SQL Window Functions                    ║
-║  ▓▓░░░░░░  28% ⚠  ║  • Complex Regex                           ║
-║                    ║  • Async Task Groups                       ║
-║  🗄️  SQL / DBs    ║                                            ║
-║  ▓▓▓░░░░░  36% ⚠  ║  🏆 Wins This Week:                        ║
-║                    ║  • Cleared Regex dead zone (+12d streak)   ║
-║  🛡️  Security     ║  • Best human-coded ratio in 3 months      ║
-║  ▓▓▓▓▓░░░  61%    ║                                            ║
-╚════════════════════╩═════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════════════════╗
+║  🧬 ATROPHY  ·  Coding Fingerprint  ·  yourname@email.com  ·  2 min ago ║
+╠═══════════════════════════╦════════════════════════════════════════════╣
+║  YOUR SKILL HEALTH        ║  HUMAN vs AI RATIO (last 6 months)        ║
+║                           ║                                            ║
+║  🧠  algorithms    72  ▓▓▓▓▓▓▓░ ↑  ║  Oct  ████████████████░░░░  79%  ║
+║  🛡️   security     68  ▓▓▓▓▓▓░░ →  ║  Nov  ████████████░░░░░░░░  61%  ║
+║  🌐  api_design    85  ▓▓▓▓▓▓▓▓ ↑  ║  Dec  ████████░░░░░░░░░░░░  48%  ║
+║  ⚡  async         61  ▓▓▓▓▓▓░░ ↓  ║  Jan  ██████████░░░░░░░░░░  53%  ║
+║  🗄️   sql          29  ▓▓░░░░░░ ⚠  ║  Feb  ████████████░░░░░░░░  59%  ║
+║  🔍  regex         18  ▓░░░░░░░ ⚠  ║  Mar  ██████████████░░░░░░  67% ↑║
+║                           ║                                            ║
+╠═══════════════════════════╬════════════════════════════════════════════╣
+║  ⚡ SKILLS TO REVISIT     ║  🏆 THIS WEEK'S WINS                       ║
+║                           ║                                            ║
+║  • sql_databases  62 days ║  ✨ error_handling improved +14 pts        ║
+║  • regex_parsing  41 days ║  🔥 testing: dead zone cleared!            ║
+║  • testing        38 days ║  📈 Best human ratio in 3 months           ║
+╠═══════════════════════════╩════════════════════════════════════════════╣
+║  🔥 Streak: 3 weeks  |  Pending challenges: 2  |  [Q]uit  [R]efresh   ║
+╚══════════════════════════════════════════════════════════════════════════╝
+```
+</details>
+
+<details>
+<summary><b>📋 What does <code>atrophy report</code> look like?</b></summary>
+<br>
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📊 Your Coding Fingerprint                                     │
+│  yourusername · Python developer · Active since 2023            │
+├─────────────────┬──────────────┬───────────┬────────────────────┤
+│  Skill          │  Score       │  Trend    │  Last Used         │
+├─────────────────┼──────────────┼───────────┼────────────────────┤
+│  api_design     │  ████████ 85 │  ↑ up     │  2 days ago        │
+│  algorithms     │  ███████░ 72 │  ↑ up     │  5 days ago        │
+│  security       │  ██████░░ 68 │  → stable │  1 week ago        │
+│  async          │  ██████░░ 61 │  ↓ down   │  3 weeks ago       │
+│  sql_databases  │  ██░░░░░░ 29 │  ↓ down   │  ⚠ 62 days ago    │
+│  regex_parsing  │  █░░░░░░░ 18 │  ↓ down   │  ⚠ 41 days ago    │
+└─────────────────┴──────────────┴───────────┴────────────────────┘
+
+  ⚡ Skills to Revisit: sql_databases (62d), regex_parsing (41d)
+  🧬 Coding Style: systematic  |  Most active: 11pm  |  Language: Python
+
+  [dim] Note: Scores are statistical estimates for self-reflection only.
+  Auto-formatters, squash commits, and conventional commit tools may
+  affect readings. Calibration improves after 3+ scans. [/dim]
 ```
 </details>
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-## 🔬 The 10 Disciplines
+## 🔬 The 10 Skill Disciplines
 
-<p align="center"><i>Atrophy maps every commit across <b>10 canonical engineering disciplines</b> — your universal skill genome.</i></p>
-
-<br/>
+`atrophy` tracks your activity across 10 universal engineering skill areas. These work across any language and any codebase.
 
 <table>
 <thead>
 <tr>
 <th align="center">Icon</th>
-<th align="left">Discipline</th>
+<th align="left">Skill</th>
 <th align="left">What It Tracks</th>
-<th align="center">Status</th>
-<th align="left">Detection Signals</th>
+<th align="left">Example Signals</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td align="center">🧠</td>
 <td><b>Algorithms</b></td>
-<td>Data structures, recursion, DP</td>
-<td align="center"><img src="https://img.shields.io/badge/Core-High%20Value-8B00FF?style=flat-square&labelColor=1a003a"/></td>
-<td>Graph/tree traversals, custom sorting, memoization</td>
+<td>Data structures, sorting, recursion, dynamic programming</td>
+<td>Tree traversals, binary search, memoization, heap usage</td>
 </tr>
 <tr>
-<td align="center">🔣</td>
-<td><b>Regex Parsing</b></td>
-<td>Complex text pattern matching</td>
-<td align="center"><img src="https://img.shields.io/badge/%E2%9A%A0-Often%20Atrophied-E74C3C?style=flat-square&labelColor=1a003a"/></td>
-<td>Capture groups, lookaheads, backreferences</td>
+<td align="center">🔍</td>
+<td><b>Regex & Parsing</b></td>
+<td>Pattern matching, text extraction, string manipulation</td>
+<td>Capture groups, lookaheads, re.compile, named groups</td>
 </tr>
 <tr>
 <td align="center">🗄️</td>
-<td><b>SQL / Databases</b></td>
-<td>Query optimization, schema design</td>
-<td align="center"><img src="https://img.shields.io/badge/%E2%9A%A0-Often%20Atrophied-E74C3C?style=flat-square&labelColor=1a003a"/></td>
-<td>Window functions, CTEs, recursive queries</td>
+<td><b>SQL & Databases</b></td>
+<td>Queries, schema design, optimization, transactions</td>
+<td>Window functions, CTEs, raw cursor.execute, GROUP BY</td>
 </tr>
 <tr>
-<td align="center">🏗️</td>
+<td align="center">🌐</td>
 <td><b>API Design</b></td>
-<td>System design, abstraction</td>
-<td align="center"><img src="https://img.shields.io/badge/Core-High%20Value-8B00FF?style=flat-square&labelColor=1a003a"/></td>
-<td>Interface definitions, dependency injection</td>
+<td>Route design, middleware, auth patterns, REST/GraphQL</td>
+<td>Custom middleware, dependency injection, route handlers</td>
 </tr>
 <tr>
 <td align="center">🛡️</td>
 <td><b>Security</b></td>
-<td>Safe encoding, cryptography</td>
-<td align="center"><img src="https://img.shields.io/badge/Critical-Never%20Skip-FF4500?style=flat-square&labelColor=1a003a"/></td>
-<td>Parameterized queries, CSRF, input sanitization</td>
+<td>Auth, input validation, cryptography, permissions</td>
+<td>Password hashing, JWT handling, parameterized queries</td>
 </tr>
 <tr>
-<td align="center">🚦</td>
-<td><b>Async / Concurrency</b></td>
-<td>Threading, event loops</td>
-<td align="center"><img src="https://img.shields.io/badge/Advanced-Specialist-9932CC?style=flat-square&labelColor=1a003a"/></td>
-<td>Mutexes, task groups, semaphores</td>
+<td align="center">⚡</td>
+<td><b>Async & Concurrency</b></td>
+<td>Async code, threads, event loops, parallel tasks</td>
+<td>async/await, task groups, semaphores, goroutines</td>
 </tr>
 <tr>
-<td align="center">🧪</td>
+<td align="center">✅</td>
 <td><b>Testing</b></td>
-<td>Mocks, property-based tests</td>
-<td align="center"><img src="https://img.shields.io/badge/Core-High%20Value-8B00FF?style=flat-square&labelColor=1a003a"/></td>
-<td>Custom fixtures, deep mocking, hypothesis tests</td>
+<td>Unit tests, integration tests, mocks, property tests</td>
+<td>Custom fixtures, deep mocking, pytest marks, hypothesis</td>
 </tr>
 <tr>
-<td align="center">📦</td>
-<td><b>DevOps / SysAdmin</b></td>
-<td>CI/CD, containers, infra</td>
-<td align="center"><img src="https://img.shields.io/badge/Ops-Infrastructure-0EA5E9?style=flat-square&labelColor=1a003a"/></td>
-<td>Docker multi-stage, bash pipelines, workflow logic</td>
+<td align="center">🏗️</td>
+<td><b>Data Structures & OOP</b></td>
+<td>Custom classes, type design, interfaces, generics</td>
+<td>Dataclasses, custom trees/graphs, protocol classes</td>
 </tr>
 <tr>
-<td align="center">🎨</td>
-<td><b>CSS / UI / UX</b></td>
-<td>Web styling, layout systems</td>
-<td align="center"><img src="https://img.shields.io/badge/%E2%9A%A0-Often%20Atrophied-E74C3C?style=flat-square&labelColor=1a003a"/></td>
-<td>CSS Grid, keyframes, fluid typography</td>
+<td align="center">💾</td>
+<td><b>System I/O</b></td>
+<td>File operations, networking, processes, sockets</td>
+<td>pathlib, subprocess, socket programming, file streaming</td>
 </tr>
 <tr>
 <td align="center">🔧</td>
-<td><b>Tooling</b></td>
-<td>Build scripts, parsers</td>
-<td align="center"><img src="https://img.shields.io/badge/Advanced-Specialist-9932CC?style=flat-square&labelColor=1a003a"/></td>
-<td>Custom parsers, AST transforms, CLI frameworks</td>
+<td><b>Tooling & DevOps</b></td>
+<td>Build scripts, CI/CD, containers, automation</td>
+<td>Docker multi-stage builds, GitHub Actions, bash pipelines</td>
 </tr>
 </tbody>
 </table>
 
-<br/>
-
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
-
-<br/>
-
-## 🧪 The Detection Stack
-
-<p align="center"><i>5 statistical heuristics combined with your personal developer baseline.</i></p>
+**How scores work:**
+- Each skill is scored 0–100 based on how recently and how deeply you exercised it yourself
+- Recent activity (last 30 days) counts 3× more than older activity
+- A score below 8 or a gap of 45+ days marks a skill as a **"Skill to Revisit"**
+- Scores update every time you run `atrophy scan`
 
 <br/>
 
-<table align="center">
-<thead>
-<tr>
-<th align="center">#</th>
-<th align="left">Signal</th>
-<th align="left">What It Measures</th>
-<th align="center">Weight</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td align="center"><b>①</b></td>
-<td>📈 <b>Commit Velocity</b></td>
-<td>Lines-per-minute ratio vs. your personal baseline</td>
-<td align="center"><img src="https://img.shields.io/badge/Weight-High-8B00FF?style=flat-square&labelColor=1a003a"/></td>
-</tr>
-<tr>
-<td align="center"><b>②</b></td>
-<td>💥 <b>Burstiness Score</b></td>
-<td>Batch vs. incremental commit patterns</td>
-<td align="center"><img src="https://img.shields.io/badge/Weight-High-8B00FF?style=flat-square&labelColor=1a003a"/></td>
-</tr>
-<tr>
-<td align="center"><b>③</b></td>
-<td>🔀 <b>Entropy Analysis</b></td>
-<td>Token distribution & code heterogeneity</td>
-<td align="center"><img src="https://img.shields.io/badge/Weight-Medium-9932CC?style=flat-square&labelColor=1a003a"/></td>
-</tr>
-<tr>
-<td align="center"><b>④</b></td>
-<td>🤖 <b>Formatter Presence</b></td>
-<td>AI formatting tells & style homogeneity</td>
-<td align="center"><img src="https://img.shields.io/badge/Weight-Medium-9932CC?style=flat-square&labelColor=1a003a"/></td>
-</tr>
-<tr>
-<td align="center"><b>⑤</b></td>
-<td>💬 <b>Message Depth</b></td>
-<td>Commit message sophistication & specificity</td>
-<td align="center"><img src="https://img.shields.io/badge/Weight-Low-B060FF?style=flat-square&labelColor=1a003a"/></td>
-</tr>
-</tbody>
-</table>
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
-> ⚠️ **Treat it as an honest mirror, not an absolute verdict.** It's calibrated to *you*, not a generic developer profile.
+## 🔌 LLM Providers
 
-<br/>
+atrophy works completely offline with no LLM. Add one to unlock personalized weekly challenges and smarter skill detection for less common languages.
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
-
-<br/>
-
-## 🔌 LLM Integration
-
-<p align="center"><i>Atrophy is fully modular. Plug in what you trust.</i></p>
-
-<br/>
-
-<table align="center">
+<table>
 <thead>
 <tr>
 <th align="center">Provider</th>
 <th align="center">Privacy</th>
-<th align="center">Challenge Gen</th>
-<th align="center">AI Detection</th>
-<th align="center">Speed</th>
+<th align="left">How to Set Up</th>
+<th align="center">Best For</th>
+<th align="center">Cost</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td align="center"><img src="https://img.shields.io/badge/🟢%20Ollama-Local-22C55E?style=for-the-badge&labelColor=1a003a"/></td>
-<td align="center"><img src="https://img.shields.io/badge/🔒-100%25%20Private-22C55E?style=flat-square&labelColor=0a1a0a"/></td>
-<td align="center">✅</td>
-<td align="center">✅</td>
-<td align="center"><img src="https://img.shields.io/badge/⚡-Fast-22C55E?style=flat-square&labelColor=1a003a"/></td>
+<td align="center"><b>🦙 Ollama Local</b></td>
+<td align="center">🔒 100% private<br/>nothing leaves machine</td>
+<td><code>ollama serve</code><br/><code>ollama pull llama3.2</code></td>
+<td align="center">Privacy-first teams<br/>offline use</td>
+<td align="center">Free</td>
 </tr>
 <tr>
-<td align="center"><img src="https://img.shields.io/badge/🟡%20OpenAI-GPT--4o-FCC21B?style=for-the-badge&labelColor=1a003a"/></td>
-<td align="center"><img src="https://img.shields.io/badge/☁-Cloud-FCC21B?style=flat-square&labelColor=1a1a00"/></td>
-<td align="center">✅</td>
-<td align="center">✅</td>
-<td align="center"><img src="https://img.shields.io/badge/⚡⚡-Very%20Fast-FCC21B?style=flat-square&labelColor=1a003a"/></td>
+<td align="center"><b>☁️ Ollama Cloud</b></td>
+<td align="center">☁️ Sent to ollama.com</td>
+<td>API key from<br/><a href="https://ollama.com/settings/keys">ollama.com/settings/keys</a></td>
+<td align="center">Large models without a GPU<br/>(70B, 671B etc.)</td>
+<td align="center">Usage-based</td>
 </tr>
 <tr>
-<td align="center"><img src="https://img.shields.io/badge/🟣%20Anthropic-Claude-DE5FE9?style=for-the-badge&labelColor=1a003a"/></td>
-<td align="center"><img src="https://img.shields.io/badge/☁-Cloud-DE5FE9?style=flat-square&labelColor=1a001a"/></td>
-<td align="center">✅</td>
-<td align="center">✅</td>
-<td align="center"><img src="https://img.shields.io/badge/⚡⚡-Very%20Fast-DE5FE9?style=flat-square&labelColor=1a003a"/></td>
+<td align="center"><b>🔵 OpenRouter</b></td>
+<td align="center">☁️ Sent to provider</td>
+<td>API key from<br/><a href="https://openrouter.ai/keys">openrouter.ai/keys</a></td>
+<td align="center">Best value — 500+ models<br/>free options available</td>
+<td align="center">Free tier + pay-per-use</td>
 </tr>
 <tr>
-<td align="center"><img src="https://img.shields.io/badge/🔵%20None-Offline-0EA5E9?style=for-the-badge&labelColor=1a003a"/></td>
-<td align="center"><img src="https://img.shields.io/badge/🔒-100%25%20Private-0EA5E9?style=flat-square&labelColor=001a1a"/></td>
-<td align="center">❌</td>
-<td align="center">✅ heuristics</td>
-<td align="center"><img src="https://img.shields.io/badge/⚡⚡⚡-Instant-0EA5E9?style=flat-square&labelColor=1a003a"/></td>
+<td align="center"><b>🟡 OpenAI</b></td>
+<td align="center">☁️ Sent to OpenAI</td>
+<td>API key from<br/><a href="https://platform.openai.com">platform.openai.com</a></td>
+<td align="center">Reliable, well-tested</td>
+<td align="center">Pay per token</td>
+</tr>
+<tr>
+<td align="center"><b>🟣 Anthropic</b></td>
+<td align="center">☁️ Sent to Anthropic</td>
+<td>API key from<br/><a href="https://console.anthropic.com">console.anthropic.com</a></td>
+<td align="center">Best reasoning quality</td>
+<td align="center">Pay per token</td>
+</tr>
+<tr>
+<td align="center"><b>⬛ None (Offline)</b></td>
+<td align="center">🔒 100% private<br/>no network at all</td>
+<td>Skip during <code>atrophy init</code></td>
+<td align="center">Full tracking + dashboard<br/>no challenges</td>
+<td align="center">Free</td>
 </tr>
 </tbody>
 </table>
 
+> **Which provider should I pick?**
+> - **Privacy first** → Ollama Local (free, fully offline, models run on your machine)
+> - **Best free option** → OpenRouter (`qwen/qwq-32b:free` and `meta-llama/llama-3.3-70b-instruct:free` are excellent and free)
+> - **Best quality** → Anthropic Claude Sonnet (most contextually accurate challenges)
+> - **Corporate environment** → Ollama Local (your code never leaves your network)
+
+**What data goes to the LLM?**
+Only when generating challenges: a short, sanitized snippet of your own code (max 400 characters), your detected tech stack, and the skill category. Your full source files are never sent. You can run `atrophy` forever in tracking-only mode with no LLM at all.
+
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
+
+<br/>
+
+## 📋 All Commands
+
+```bash
+atrophy init                      # One-time setup for this repo
+atrophy init --email you@dev.com  # Specify git author email manually
+
+atrophy scan                      # Analyze last 180 days of commits
+atrophy scan --days 90            # Analyze last 90 days only
+atrophy scan --force              # Re-scan even if already done today
+
+atrophy report                    # Full skill report in the terminal
+atrophy report --json             # Output as JSON (for piping/scripts)
+atrophy report --share            # Save report.md to current folder
+
+atrophy dashboard                 # Launch interactive animated TUI
+
+atrophy challenge                 # View this week's pending challenges
+atrophy challenge --generate      # Generate 3 new personalized challenges
+atrophy challenge --done 12       # Mark challenge #12 as complete
+
+atrophy digest                    # Print weekly digest to terminal
+atrophy digest --open             # Save and open in $EDITOR
+
+atrophy share                     # Generate a shareable PNG card (for Twitter/X)
+atrophy badge                     # Start a local server serving your score badge
+atrophy config                    # Change LLM provider or settings
+```
+
+<br/>
+
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
+
+<br/>
+
+## 📦 What Gets Stored and Where
+
+`atrophy` stores everything in `~/.atrophy/` on your machine.
+
+```
+~/.atrophy/
+├── atrophy.db        # SQLite database — all your scan history, skill scores, challenges
+├── config.json       # Settings (provider choice, email, scan preferences)
+├── .env              # API keys — never committed to git, never leaves your machine
+└── digests/          # Weekly digest Markdown files
+    ├── 2026-10.md
+    └── 2026-11.md
+```
+
+**Nothing in your git repositories is ever modified.** `atrophy` is read-only. It reads commit metadata and diffs. It never writes, stages, or commits anything to any repo.
+
+<br/>
+
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
 ## 🗺️ Roadmap
 
 ```
- ✅  v0.1  —  Core scan engine + heuristic AI detection
- ✅  v0.2  —  Coding Fingerprint™ + animated TUI dashboard
- ✅  v0.3  —  Weekly digest exports (Markdown / Obsidian)
- 🔄  v0.4  —  LLM-powered personalized challenges      [in progress]
- 📅  v0.5  —  VS Code extension integration
- 📅  v0.6  —  Team / org-level dashboards
- 📅  v1.0  —  Multi-repo support + Mercurial backend
+✅  v0.1  —  Core git scanner + 5-signal AI detection heuristics
+✅  v0.2  —  Personal baseline calibration (no more penalizing good devs)
+✅  v0.3  —  3-layer skill detection: Tree-sitter AST + LLM + keyword fallback
+✅  v0.4  —  Animated Textual TUI dashboard
+✅  v0.5  —  LLM challenge engine with real codebase context
+✅  v0.6  —  OpenRouter (500+ models) + Ollama Cloud support
+✅  v0.7  —  Wins system + positive momentum framing + weekly digests
+🔄  v0.8  —  GitHub Action PR comments with skill reports    [in progress]
+📅  v0.9  —  VS Code extension (live skill meter in status bar)
+📅  v1.0  —  Team dashboards + multi-repo support
+📅  v1.1  —  Mercurial backend support
 ```
 
 > 💬 Have a feature idea? [Open a Discussion →](https://github.com/yourusername/atrophy/discussions)
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
 ## ❓ FAQ
 
 <details>
-<summary><b>🔒 Does my source code ever leave my machine?</b></summary>
+<summary><b>🔒 Does my code ever leave my machine?</b></summary>
 <br>
-<b>No.</b> <code>atrophy</code> runs <b>100% locally</b> by default. Your git history never leaves your physical hardware. The only exception is if you configure a cloud LLM provider — in which case, short, sanitized code snippets are sent solely to generate your exercises. Your full source is never transmitted. Connect <b>Ollama</b> to run the entire backend locally with zero cloud.
+
+**No, by default.** Everything `atrophy` does runs entirely on your local machine. Your git history, your diffs, your skill scores — all stored in `~/.atrophy/` and never sent anywhere.
+
+The one exception is if you configure a cloud LLM provider (OpenAI, Anthropic, OpenRouter, or Ollama Cloud) for challenge generation. In that case, only a short, anonymized code snippet is sent — not your full source files. To keep everything 100% offline, use **Ollama Local** or skip the LLM entirely.
 </details>
 
 <details>
-<summary><b>🤔 Can I use Atrophy entirely offline without an API key?</b></summary>
+<summary><b>🤔 Can I use atrophy without any API key?</b></summary>
 <br>
-<b>Absolutely.</b> <code>atrophy init</code> lets you skip LLM configuration entirely. You'll still get full Coding Fingerprint tracking, the animated terminal dashboard, weekly digest exports, and heuristic-based AI detection. The only missing piece is AI-generated personalized challenges — fixable by pointing Atrophy at a local Ollama instance.
+
+**Yes, completely.** `atrophy` works in full tracking mode with no API key at all. You get:
+- ✅ Full git history scanning
+- ✅ AI vs human classification (using the 5-signal heuristics)
+- ✅ Skill health scores across all 10 disciplines
+- ✅ The animated terminal dashboard
+- ✅ Weekly digest exports
+- ❌ AI-generated personalized challenges (requires a provider)
+
+For challenges without any cloud service, install [Ollama](https://ollama.com) and pull any model — it runs locally, it's free, and your data stays on your machine.
 </details>
 
 <details>
-<summary><b>🎯 How accurate is the AI detection algorithm?</b></summary>
+<summary><b>🎯 How accurate is the AI detection?</b></summary>
 <br>
-The baseline detector combines <b>5 statistical heuristics</b> (commit velocity, burstiness, entropy, formatter presence, and message depth) with your <b>personal developer baseline</b> — the cadence and patterns unique to how <i>you</i> write code. It is highly accurate, but always treat it as an honest mirror, not an absolute verdict.
+
+`atrophy` uses 5 statistical signals combined with your personal baseline. In our testing it is reasonably accurate but not perfect — and that is by design.
+
+A few things that can affect readings:
+- **Squash commits** look like AI even when they're human (atrophy detects and marks these as "uncertain")
+- **Auto-formatters** like ruff or black make your code look "too clean" — atrophy detects these tools in your repo and adjusts
+- **Conventional commits** (`feat:`, `fix:`) are popular with AI tools but also with disciplined humans — atrophy checks your historical patterns before scoring this signal
+
+The bottom line: treat your score as an honest personal mirror, not a precise measurement. It improves with more data — after 3+ scans, calibration accuracy increases significantly.
 </details>
 
 <details>
-<summary><b>⚙️ Which editors and version control systems are supported?</b></summary>
+<summary><b>💼 Is it safe to use on my company's codebase?</b></summary>
 <br>
-Atrophy works with any <b>git repository</b>, regardless of editor or IDE. VS Code, Neovim, JetBrains, bare terminal — if it's committed to git, Atrophy can analyze it. Mercurial support is on the roadmap.
+
+Yes — with Ollama Local, `atrophy` is completely air-gapped. No data leaves your machine at any point. It only reads git metadata and diffs locally.
+
+If you use a cloud LLM provider, only a small code snippet is sent for challenge generation. Consult your company's security policy if you are unsure about sending any code externally.
+
+`atrophy` never uploads, indexes, or stores your code anywhere outside your own `~/.atrophy/` directory.
 </details>
 
 <details>
-<summary><b>📅 How often should I run <code>atrophy scan</code>?</b></summary>
+<summary><b>⚙️ Which languages and editors are supported?</b></summary>
 <br>
-At least <b>once a week</b> for an accurate fingerprint — or hook it into a git post-commit hook to run automatically. The more data Atrophy has, the sharper and more personalized its recommendations become.
+
+`atrophy` works with **any git repository** — editor and IDE don't matter.
+
+For skill detection, tree-sitter AST analysis supports: Python, TypeScript, JavaScript, Go, Rust, Java, Ruby, C, C++, and more. For unsupported languages, LLM semantic classification or keyword fallback handles detection automatically.
+
+For version control, `atrophy` currently supports **git only**. Mercurial support is on the roadmap.
 </details>
+
+<details>
+<summary><b>📅 How often should I run it?</b></summary>
+<br>
+
+**Once a week** gives you good signal with low noise. Running more often is fine — `atrophy scan` is fast (typically under 60 seconds) and it only processes new commits since the last scan.
+
+For best results, scan weekly and do one challenge per week. After about 3 scans, `atrophy` has enough data to calibrate your personal baseline well and the scores become meaningfully accurate.
+</details>
+
+<details>
+<summary><b>🏷️ How do I add the badge to my GitHub profile?</b></summary>
+<br>
+
+Run `atrophy badge` — it starts a local server at `http://localhost:6174` serving an SVG badge with your current human coding score. Add it to any README:
+
+```markdown
+![atrophy score](http://localhost:6174)
+```
+
+For a static shareable image, run `atrophy share` — it generates a `atrophy-card.png` in your current folder ready to post on Twitter/X.
+</details>
+
+<br/>
+
+<img src="https://capsule-render.vercel.app/api?type=rect&color=gradient&customColorList=24,20,15,12&height=3" width="100%"/>
 
 <br/>
 
 ## 🤝 Contributing
 
 <p align="center">
-  <a href="https://github.com/yourusername/atrophy/pulls"><img src="https://img.shields.io/badge/PRs-Welcome!-9932CC?style=for-the-badge&logo=github&logoColor=white&labelColor=1a003a"/></a>&nbsp;
-  <a href="https://github.com/yourusername/atrophy/issues"><img src="https://img.shields.io/github/issues/yourusername/atrophy?style=for-the-badge&color=FF6B6B&logo=github&logoColor=white&labelColor=1a003a"/></a>&nbsp;
-  <a href="https://github.com/yourusername/atrophy/stargazers"><img src="https://img.shields.io/github/stars/yourusername/atrophy?style=for-the-badge&color=FFD700&logo=github&logoColor=white&labelColor=1a003a"/></a>
+  <a href="https://github.com/yourusername/atrophy/pulls">
+    <img src="https://img.shields.io/badge/PRs-Welcome!-9932CC?style=for-the-badge&logo=github&logoColor=white&labelColor=1a003a"/>
+  </a>&nbsp;
+  <a href="https://github.com/yourusername/atrophy/issues">
+    <img src="https://img.shields.io/github/issues/yourusername/atrophy?style=for-the-badge&color=FF6B6B&logo=github&logoColor=white&labelColor=1a003a"/>
+  </a>&nbsp;
+  <a href="https://github.com/yourusername/atrophy/stargazers">
+    <img src="https://img.shields.io/github/stars/yourusername/atrophy?style=for-the-badge&color=FFD700&logo=github&logoColor=white&labelColor=1a003a"/>
+  </a>
 </p>
+
+`atrophy` is built to be easy to contribute to. The most impactful contributions:
+
+- **Add a new skill category** — 5 steps, documented in `CONTRIBUTING.md`
+- **Improve AST detection** — add node types to `SKILL_NODE_MAP` in `skill_mapper.py`
+- **Add a new LLM provider** — copy `providers/base.py` pattern, 4 steps
+- **Write tests** — every new feature needs a test in `tests/`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+
+**Good first issues if you want somewhere to start:**
+- Add Swift / Kotlin language support to tree-sitter skill detection
+- Add `atrophy compare` command (compare two different time windows)
+- Improve the Textual dashboard with Plotext charts
+- Write a Homebrew formula for macOS one-line install
 
 <br/>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Flexed%20Biceps.png" width="55" alt="Muscle"/>&nbsp;&nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Alien%20Monster.png" width="55" alt="Monster"/>&nbsp;&nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Microscope.png" width="55" alt="Science"/>&nbsp;&nbsp;&nbsp;
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Flexed%20Biceps.png" width="52"/>&nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Microscope.png" width="52"/>&nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Smilies/Alien%20Monster.png" width="52"/>
 </p>
 
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:4B0082,50:8B00FF,100:B060FF&height=130&section=footer&text=Don't%20let%20your%20skills%20fade%20into%20the%20void.&fontSize=22&fontColor=ffffff&animation=twinkling&fontAlignY=68" width="100%"/>
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:4B0082,50:8B00FF,100:B060FF&height=140&section=footer&text=Don't%20let%20your%20skills%20go%20quiet.&fontSize=26&fontColor=ffffff&animation=twinkling&fontAlignY=65" width="100%"/>
 </p>
 
 <p align="center">
-  Built with 💜 for engineers who refuse to go soft &nbsp;·&nbsp;
+  Built with 💜 by developers who refuse to lose their edge &nbsp;·&nbsp;
   <a href="https://pypi.org/p/atrophy">PyPI</a> &nbsp;·&nbsp;
   <a href="https://github.com/yourusername/atrophy">GitHub</a> &nbsp;·&nbsp;
   <a href="LICENSE">MIT License</a>
