@@ -11,6 +11,7 @@ Tests the challenge generation pipeline including:
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -373,6 +374,7 @@ class TestGenerateChallenges:
 class TestOllamaSSRF:
     """Tests that Ollama provider rejects non-localhost URLs."""
 
+    @patch.dict("sys.modules", {"ollama": MagicMock()})
     def test_remote_url_rejected(self) -> None:
         """Remote URLs are rejected with ProviderError."""
         from types import SimpleNamespace
@@ -387,6 +389,7 @@ class TestOllamaSSRF:
         with pytest.raises(ProviderError, match="localhost"):
             OllamaProvider(settings)
 
+    @patch.dict("sys.modules", {"ollama": MagicMock()})
     def test_localhost_url_accepted(self) -> None:
         """Localhost URLs are accepted."""
         from types import SimpleNamespace
@@ -402,6 +405,7 @@ class TestOllamaSSRF:
         provider = OllamaProvider(settings)
         assert provider._mode == "local"
 
+    @patch.dict("sys.modules", {"ollama": MagicMock()})
     def test_loopback_url_accepted(self) -> None:
         """127.0.0.1 URLs are accepted."""
         from types import SimpleNamespace

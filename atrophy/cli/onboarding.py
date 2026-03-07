@@ -70,6 +70,41 @@ def run_onboarding() -> None:
             )
         )
 
+def ask_auto_scan_hook() -> None:
+    """Ask to install the git post-commit hook after init."""
+    import asyncio
+    from atrophy.config import get_settings
+    from atrophy.core.storage import Storage
+
+    settings = get_settings()
+    storage = Storage(settings.db_path)
+    asyncio.run(storage.init_db())
+    
+    try:
+        asked = asyncio.run(storage.get_setting("auto_install_hook_asked"))
+    except Exception:
+        asked = None
+        
+    if asked == "true":
+        asyncio.run(storage.close())
+        return
+
+    console.print()
+    if typer.confirm("Auto-scan on every commit? (Recommended)", default=True):
+        from atrophy.cli.app import hook
+        try:
+            # We call the hook command directly
+            hook(install=True, uninstall=False, status=False)
+        except typer.Exit:
+            pass
+    
+    try:
+        asyncio.run(storage.set_setting("auto_install_hook_asked", "true"))
+    except Exception:
+        pass
+    asyncio.run(storage.close())
+
+
 
 # ── Welcome ─────────────────────────────────────────────────────
 

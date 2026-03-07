@@ -119,8 +119,9 @@ class TestInit:
     @patch("atrophy.cli.app.get_settings")
     @patch("atrophy.cli.app._detect_email")
     @patch("atrophy.cli.onboarding.run_onboarding")
+    @patch("atrophy.cli.onboarding.ask_auto_scan_hook")
     def test_init_success(
-        self, mock_onboarding, mock_email, mock_settings, mock_storage,
+        self, mock_ask_hook, mock_onboarding, mock_email, mock_settings, mock_storage,
         tmp_path,
     ) -> None:
         """init succeeds in a git repo with valid email."""
@@ -206,7 +207,7 @@ class TestScan:
         assert result.exit_code == 1
         assert "atrophy init" in result.output
 
-    @patch("atrophy.cli.app.get_settings")
+    @patch("atrophy.config.get_settings")
     @patch("atrophy.cli.app._get_storage")
     @patch("atrophy.core.ai_detector.AIDetector")
     @patch("atrophy.core.git_scanner.GitScanner")
@@ -228,6 +229,9 @@ class TestScan:
         storage_instance.save_skill_snapshots = AsyncMock()
         storage_instance.update_last_scanned = AsyncMock()
         storage_instance.set_setting = AsyncMock()
+        storage_instance.get_all_skills_latest = AsyncMock(return_value=[])
+        storage_instance.detect_and_save_wins = AsyncMock(return_value=[])
+        storage_instance.get_setting = AsyncMock(return_value="0")
         storage_instance.close = AsyncMock()
         mock_storage.return_value = storage_instance
 
@@ -280,9 +284,10 @@ class TestScan:
         # Mock settings
         settings_instance = MagicMock()
         settings_instance.data_dir = tmp_path / ".atrophy"
+        settings_instance.llm_provider = "none"
         mock_settings.return_value = settings_instance
 
-        result = runner.invoke(app, ["scan"])
+        result = runner.invoke(app, ["scan"], catch_exceptions=False)
         assert result.exit_code == 0
         assert "Scan Complete" in result.output
 

@@ -215,6 +215,9 @@ def init(
         "[dim]Next step:[/dim] "
         "Run [bold cyan]atrophy scan[/bold cyan] to analyze your history."
     )
+    
+    from atrophy.cli.onboarding import ask_auto_scan_hook
+    ask_auto_scan_hook()
 
 
 async def _init_project(
@@ -256,13 +259,34 @@ def scan(
             help="Force re-scan even if scanned recently.",
         ),
     ] = False,
+    silent: Annotated[
+        bool,
+        typer.Option(
+            "--silent",
+            help="Suppress output, only log to file.",
+        ),
+    ] = False,
+    quick: Annotated[
+        bool,
+        typer.Option(
+            "--quick",
+            help="Only process new commits since last scan.",
+        ),
+    ] = False,
 ) -> None:
     """Scan git history and analyze commits for AI patterns."""
-    show_banner()
+    if not silent:
+        show_banner()
     try:
-        asyncio.run(_run_scan(days, force))
+        asyncio.run(_run_scan(days, force, silent, quick))
     except AtrophyError as exc:
-        show_error(str(exc))
+        if silent:
+            from atrophy.config import get_settings
+            log_path = get_settings().data_dir / "scan.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now(UTC).isoformat()} ERROR: {exc}\n")
+        else:
+            show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
 
@@ -343,12 +367,14 @@ def _build_scan_right_panel(
     )
 
 
-async def _run_scan(days: int, force: bool) -> None:
+async def _run_scan(days: int, force: bool, silent: bool = False, quick: bool = False) -> None:
     """Execute the full scan pipeline with live dashboard.
 
     Args:
         days: Number of days of history to scan.
         force: If True, skip the recent-scan check.
+        silent: If True, suppress output.
+        quick: If True, only scan since last_scanned_at.
     """
     from atrophy.core.ai_detector import AIDetector
     from atrophy.core.git_scanner import GitScanner
@@ -369,35 +395,103 @@ async def _run_scan(days: int, force: bool) -> None:
         raise typer.Exit(code=1)
 
     # Step 2: Check last_scanned_at
-    if not force and project.last_scanned_at is not None:
+    since_date = None
+    if project.last_scanned_at is not None:
         last = project.last_scanned_at
         if last.tzinfo is None:
             last = last.replace(tzinfo=UTC)
-        elapsed = datetime.now(UTC) - last
-        if elapsed < timedelta(hours=24):
-            hours_ago = round(elapsed.total_seconds() / 3600, 1)
-            if not typer.confirm(
-                f"Last scanned {hours_ago}h ago. Scan again?"
-            ):
-                console.print("[dim]Scan skipped.[/dim]")
-                await storage.close()
-                return
+        
+        if quick:
+            since_date = last
+            
+        if not force and not quick:
+            elapsed = datetime.now(UTC) - last
+            if elapsed < timedelta(hours=24):
+                if silent:
+                    await storage.close()
+                    return
+                hours_ago = round(elapsed.total_seconds() / 3600, 1)
+                if not typer.confirm(
+                    f"Last scanned {hours_ago}h ago. Scan again?"
+                ):
+                    console.print("[dim]Scan skipped.[/dim]")
+                    await storage.close()
+                    return
 
     # Step 3: Run GitScanner
     scanner = GitScanner(
-        cwd, days_back=days, author_email=project.author_email
+        cwd, days_back=days, author_email=project.author_email, since_date=since_date
     )
     commits = scanner.scan_commits()
 
     if not commits:
-        show_error(
-            "No commits found. Is this the right repo?",
-            hint="Check the --days flag or your git email.",
-        )
+        if not silent:
+            show_error(
+                "No commits found. Is this the right repo?",
+                hint="Check the --days flag or your git email.",
+            )
         await storage.close()
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1 if not silent else 0)
 
     total = len(commits)
+    
+    if silent:
+        # Just run the detector over the commits without UI
+        detector = AIDetector()
+        detector.group_into_sessions(commits)
+        baseline = detector.build_baseline(commits, cwd)
+        baseline_data = {
+            "avg_velocity": baseline.avg_velocity,
+            "uses_conventional_commits": baseline.uses_conventional_commits,
+            "uses_autoformatter": baseline.uses_autoformatter,
+            "avg_commit_size": baseline.avg_lines_per_commit,
+        }
+        await storage.save_baseline(project.id, baseline_data)
+
+        from atrophy.config import get_settings
+        from atrophy.core.skill_classifier import LLMSkillClassifier
+        from atrophy.exceptions import ProviderError
+        from atrophy.providers import get_provider
+
+        llm_classifier = None
+        try:
+            settings_obj = get_settings()
+            provider = get_provider(settings_obj)
+            llm_classifier = LLMSkillClassifier(provider)
+        except ProviderError:
+            pass
+
+        mapper = SkillMapper(llm_classifier=llm_classifier)
+
+        analyzed: list[dict] = []
+        for commit in commits:
+            analyzed.append(detector.analyze(commit, baseline))
+
+        skill_profile = mapper.map_skills(analyzed)
+        coding_dna = mapper.get_coding_dna(analyzed, skill_profile)
+        
+        old_snapshots = await storage.get_all_skills_latest(project.id)
+        old_profile = {
+            s.skill_name: {"score": s.score, "last_seen": s.snapshot_date}
+            for s in old_snapshots
+        }
+        
+        await storage.detect_and_save_wins(project.id, old_profile, skill_profile)
+        await storage.upsert_commits(project.id, analyzed)
+        await storage.save_skill_snapshots(project.id, skill_profile)
+        await storage.update_last_scanned(project.id)
+        
+        scan_count_str = await storage.get_setting("scan_count", "0")
+        scan_count = int(scan_count_str) + 1
+        await storage.set_setting("scan_count", str(scan_count))
+        await storage.set_setting("coding_dna", json.dumps(coding_dna, default=str))
+
+        await storage.close()
+        
+        log_path = settings_obj.data_dir / "scan.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now(UTC).isoformat()} SUCCESS: Scanned {len(commits)} commits.\n")
+        return
 
     # Step 4 + 5: Classify and map with live dashboard
     detector = AIDetector()
@@ -675,6 +769,64 @@ def _print_scan_summary(
         " for your full skill profile.\n"
     )
 
+async def _check_and_show_tip(storage, project, silent: bool = False) -> None:
+    if silent or not project:
+        return
+    git_dir = Path.cwd() / ".git" / "hooks"
+    hook_path = git_dir / "post-commit"
+    hook_installed = hook_path.exists()
+    
+    # 1. Commits since last scan
+    if project.last_scanned_at:
+        try:
+            from git import Repo
+            import os
+            repo = Repo(str(Path.cwd()))
+            last = project.last_scanned_at
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=UTC)
+            since_arg = last.strftime("%Y-%m-%dT%H:%M:%S%z")
+            kwargs = {"since": since_arg}
+            if project.author_email:
+                kwargs["author"] = project.author_email
+            new_commits = sum(1 for _ in repo.iter_commits(**kwargs))
+            
+            if new_commits > 20:
+                days_ago = (datetime.now(UTC) - last).days
+                console.print(
+                    Panel(
+                        f"💡 {new_commits} new commits since your last scan ({days_ago} days ago)\n"
+                        f"   Run `atrophy scan` for updated results",
+                        border_style="yellow",
+                    )
+                )
+        except Exception:
+            pass
+
+    # 2. Hook tip
+    if not hook_installed:
+        try:
+            last_tip = await storage.get_setting("hook_tip_shown_at")
+            show_tip = True
+            if last_tip:
+                 last_tip_date = datetime.fromisoformat(last_tip)
+                 if last_tip_date.tzinfo is None:
+                     last_tip_date = last_tip_date.replace(tzinfo=UTC)
+                 if (datetime.now(UTC) - last_tip_date).days < 7:
+                     show_tip = False
+            if show_tip:
+                console.print(
+                    Panel(
+                        "⚡ Auto-scan on every commit with:\n   [bold cyan]atrophy hook --install[/bold cyan]\n(Never think about scanning again)",
+                        title="Tip",
+                        border_style="yellow",
+                        expand=False
+                    )
+                )
+                await storage.set_setting("hook_tip_shown_at", datetime.now(UTC).isoformat())
+        except Exception:
+            pass
+
 
 # ── COMMAND: atrophy report ─────────────────────────────────────────
 
@@ -738,6 +890,9 @@ async def _run_report(json_output: bool, share: bool) -> None:
             hint="Run `atrophy scan` first.",
         )
         raise typer.Exit(code=1)
+
+    if not json_output:
+        await _check_and_show_tip(storage, project)
 
     # Load coding DNA
     dna_raw = await storage.get_setting("coding_dna")
@@ -1529,6 +1684,22 @@ async def _run_challenge(generate: bool, done: int | None) -> None:
 def dashboard() -> None:
     """Launch the interactive TUI dashboard."""
     show_banner()
+    
+    # Check tip briefly before taking over screen (user will see it when they exit, or maybe better to just use TUI but we print it beforehand)
+    cwd = str(Path.cwd().resolve())
+    storage = _get_storage()
+    try:
+        asyncio.run(storage.init_db())
+        project = asyncio.run(storage.get_project(cwd))
+        if project:
+            asyncio.run(_check_and_show_tip(storage, project))
+            import time
+            time.sleep(1) # Let them read it maybe? Not necessary, it leaves it in scrollback
+    except Exception:
+        pass
+    finally:
+        asyncio.run(storage.close())
+        
     from atrophy.tui.dashboard import AtrophyDashboard
 
     app_instance = AtrophyDashboard()
@@ -1909,16 +2080,75 @@ def digest(
             help="Open the digest in your $EDITOR",
         ),
     ] = False,
+    silent: Annotated[
+        bool,
+        typer.Option(
+            "--silent",
+            help="Suppress output",
+        ),
+    ] = False,
+    check: Annotated[
+        bool,
+        typer.Option(
+            "--check",
+            help="Check if scan happened recently, notify if not",
+        ),
+    ] = False,
 ) -> None:
     """Generate a Weekly Digest aimed at journaling apps."""
-    show_banner()
+    if not silent:
+        show_banner()
     try:
-        asyncio.run(_run_digest(open_editor))
+        if check:
+            asyncio.run(_run_check(silent))
+        else:
+            asyncio.run(_run_digest(open_editor, silent))
     except AtrophyError as exc:
-        show_error(str(exc))
+        if silent:
+            from atrophy.config import get_settings
+            log_path = get_settings().data_dir / "scan.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now(UTC).isoformat()} ERROR: {exc}\n")
+        else:
+            show_error(str(exc))
         raise typer.Exit(code=1) from exc
 
-async def _run_digest(open_editor: bool) -> None:
+async def _run_check(silent: bool) -> None:
+    cwd = str(Path.cwd().resolve())
+    storage = _get_storage()
+    await storage.init_db()
+    project = await storage.get_project(cwd)
+    if not project:
+        await storage.close()
+        return
+
+    last = project.last_scanned_at
+    await storage.close()
+    
+    if last is None:
+        return
+        
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+        
+    elapsed = datetime.now(UTC) - last
+    if elapsed.days >= 7:
+        if not silent:
+            console.print("[yellow]Time for your weekly skill scan.[/yellow]")
+        import platform
+        import subprocess
+        system = platform.system()
+        try:
+            if system == "Darwin":
+                subprocess.run(["terminal-notifier", "-title", "atrophy", "-message", "time for your weekly skill scan"], shell=False, timeout=5)
+            elif system == "Linux":
+                subprocess.run(["notify-send", "atrophy", "time for your weekly skill scan"], shell=False, timeout=5)
+            else:
+                pass
+        except Exception:
+            pass
+
+async def _run_digest(open_editor: bool, silent: bool = False) -> None:
     cwd = str(Path.cwd().resolve())
     storage = _get_storage()
     await storage.init_db()
@@ -2005,11 +2235,136 @@ async def _run_digest(open_editor: bool) -> None:
         
     digest_path.write_text("\n".join(lines), encoding="utf-8")
     
-    console.print(f"[green]Digest saved. Open with: cat {digest_path}[/green]")
-    if not open_editor:
-        console.print("[dim]Tip: Run `atrophy digest --open` to open in your $EDITOR[/dim]")
-    else:
+    if not silent:
+        console.print(f"[green]Digest saved. Open with: cat {digest_path}[/green]")
+        if not open_editor:
+            console.print("[dim]Tip: Run `atrophy digest --open` to open in your $EDITOR[/dim]")
+    if open_editor:
         import os, subprocess
         editor = os.environ.get("EDITOR", "notepad")
         subprocess.run([editor, str(digest_path)], shell=False, timeout=30)
 
+
+@app.command()
+def hook(
+    install: Annotated[bool, typer.Option("--install", help="Install git post-commit hook")] = False,
+    uninstall: Annotated[bool, typer.Option("--uninstall", help="Uninstall git post-commit hook")] = False,
+    status: Annotated[bool, typer.Option("--status", help="Show hook status")] = False,
+) -> None:
+    """Manage the git post-commit hook for auto-scanning."""
+    show_banner()
+    git_dir = Path.cwd().resolve() / ".git" / "hooks"
+    
+    if not install and not uninstall and not status:
+        show_error("Provide --install, --uninstall, or --status")
+        raise typer.Exit(code=1)
+        
+    if install:
+        if not git_dir.exists():
+            show_error("Could not find .git/hooks directory. Are you in a git repo?")
+            raise typer.Exit(code=1)
+            
+        hook_path = git_dir / "post-commit"
+        hook_content = (
+            "#!/bin/sh\n"
+            "# atrophy auto-scan hook\n"
+            "# Installed by: atrophy hook --install\n"
+            "# Remove with: atrophy hook --uninstall\n"
+            "(atrophy scan --silent --quick &) 2>/dev/null\n"
+            "exit 0\n"
+        )
+        hook_path.write_text(hook_content, encoding="utf-8")
+        import stat
+        hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        show_success("Installed git post-commit hook.")
+        
+    elif uninstall:
+        hook_path = git_dir / "post-commit"
+        if hook_path.exists():
+            content = hook_path.read_text(encoding="utf-8")
+            if "# atrophy auto-scan hook" in content:
+                hook_path.unlink()
+                show_success("Removed git post-commit hook.")
+            else:
+                show_error("Existing hook was not created by atrophy. Skipping.")
+        else:
+            show_success("No hook found.")
+            
+    elif status:
+        hook_path = git_dir / "post-commit"
+        if hook_path.exists():
+            content = hook_path.read_text(encoding="utf-8")
+            if "# atrophy auto-scan hook" in content:
+                show_success("Hook is currently INSTALLED.")
+            else:
+                show_info("A custom hook is installed, but it is not managed by atrophy.")
+        else:
+            show_info("Hook is not installed.")
+
+        # Print last scanned time
+        cwd = str(Path.cwd().resolve())
+        storage = _get_storage()
+        try:
+            asyncio.run(storage.init_db())
+            project = asyncio.run(storage.get_project(cwd))
+            if project and project.last_scanned_at:
+                date_str = project.last_scanned_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+                console.print(f"Last auto-scan time: {date_str}")
+        finally:
+            asyncio.run(storage.close())
+
+
+@app.command()
+def remind(
+    enable: Annotated[bool, typer.Option("--enable", help="Enable weekly reminders")] = False,
+    disable: Annotated[bool, typer.Option("--disable", help="Disable weekly reminders")] = False,
+) -> None:
+    """Manage weekly reminder notifications for atrophy."""
+    show_banner()
+    
+    if not enable and not disable:
+        show_error("Provide --enable or --disable")
+        raise typer.Exit(code=1)
+        
+    import platform
+    import subprocess
+    system = platform.system()
+    
+    if enable:
+        if not typer.confirm("This will add a cron or scheduled task to run atrophy weekly. Continue?", default=True):
+            return
+            
+        cron_job = "0 9 * * 1 atrophy digest --silent --check"
+        if system == "Darwin" or system == "Linux":
+            try:
+                # Basic crontab writing for Unix (only appends if not present)
+                current_cron = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+                if cron_job not in current_cron:
+                    new_cron = current_cron + "\n" + cron_job + "\n"
+                    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE)
+                    proc.communicate(new_cron.encode("utf-8"))
+                    show_success("Enabled weekly reminders (added to crontab -l).")
+                else:
+                    show_info("Weekly reminders already enabled.")
+            except Exception as exc:
+                show_error(f"Failed to set crontab: {exc}")
+        else:
+            show_error("Cron setup is only automated on maxOS/Linux right now.")
+            console.print(f"Please add this task manually on Windows:\n[cyan]{cron_job}[/cyan]")
+            
+    elif disable:
+        if system == "Darwin" or system == "Linux":
+            try:
+                current_cron = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+                if "atrophy digest --silent --check" in current_cron:
+                    lines = [line for line in current_cron.splitlines() if "atrophy digest --silent --check" not in line]
+                    new_cron = "\n".join(lines) + "\n"
+                    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE)
+                    proc.communicate(new_cron.encode("utf-8"))
+                    show_success("Disabled weekly reminders.")
+                else:
+                    show_success("Weekly reminders are already disabled.")
+            except Exception as exc:
+                show_error(f"Failed to read/write crontab: {exc}")
+        else:
+            show_error("Automated removal is only supported on macOS/Linux.")

@@ -84,6 +84,7 @@ class GitScanner:
         repo_path: str | Path,
         days_back: int = 180,
         author_email: str | None = None,
+        since_date: datetime | None = None,
     ) -> None:
         """Initialize the scanner with a validated repository path.
 
@@ -130,6 +131,7 @@ class GitScanner:
         self._repo_path = resolved
         self._days_back = days_back
         self._author_email = author_email
+        self._since_date = since_date
 
     def scan_commits(self) -> list[dict]:
         """Walk all commits in the configured time window.
@@ -143,14 +145,19 @@ class GitScanner:
         Raises:
             AtrophyGitError: If git operations fail.
         """
-        since_date = datetime.now(timezone.utc) - timedelta(
-            days=self._days_back
-        )
+        if self._since_date is not None:
+            since_date = self._since_date
+            if since_date.tzinfo is None:
+                since_date = since_date.replace(tzinfo=timezone.utc)
+        else:
+            since_date = datetime.now(timezone.utc) - timedelta(
+                days=self._days_back
+            )
 
         try:
             raw_commits = list(self._repo.iter_commits(
                 all=True,
-                since=since_date.strftime("%Y-%m-%d"),
+                since=since_date.strftime("%Y-%m-%dT%H:%M:%S%z"),
             ))
         except GitCommandError as exc:
             msg = f"Failed to read git log: {exc}"
