@@ -5,7 +5,7 @@
 <br/>
 
 <!-- BADGES ROW 1 -->
-<a href="https://pypi.org/project/atrophy/"><img src="https://img.shields.io/badge/PyPI-v0.1.0-8B00FF?style=for-the-badge&logo=pypi&logoColor=white&labelColor=12001f" alt="PyPI"/></a>&nbsp;
+<a href="https://pypi.org/project/atrophy/"><img src="https://img.shields.io/badge/PyPI-v0.1.1-8B00FF?style=for-the-badge&logo=pypi&logoColor=white&labelColor=12001f" alt="PyPI"/></a>&nbsp;
 <a href="https://pypi.org/project/atrophy/"><img src="https://img.shields.io/badge/pip%20install-atrophy-9932CC?style=for-the-badge&logo=python&logoColor=white&labelColor=12001f"/></a>&nbsp;
 <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white&labelColor=12001f"/>&nbsp;
 <img src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=12001f"/>
