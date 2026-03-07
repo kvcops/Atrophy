@@ -69,5 +69,5 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/[username]/atrophy"
-Repository = "https://github.com/[username]/atrophy"
+Homepage = "https://github.com/kvcops/Atrophy"
+Repository = "https://github.com/kvcops/Atrophy"
