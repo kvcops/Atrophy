@@ -1962,7 +1962,7 @@ async def _run_digest(open_editor: bool) -> None:
     digest_path = digests_dir / filename
     
     lines = [
-        f"## atrophy Weekly Digest \u2014 Week of {now.strftime('%B %-d, %Y')}",
+        f"## atrophy Weekly Digest \u2014 Week of {now.strftime('%B')} {now.day}, {now.year}",
         "",
         "### What I built this week",
         "- Human-written commits recorded this week",
@@ -1999,7 +1999,7 @@ async def _run_digest(open_editor: bool) -> None:
     if pending:
         for c in pending:
             d_color = "🟢" if c.difficulty == "easy" else ("🟡" if c.difficulty == "medium" else "🔴")
-            lines.append(f"- {d_color} [{c.difficulty.title()}] {c.title} (~{c.estimated_minutes} min)")
+            lines.append(f"- {d_color} [{c.difficulty.title()}] {c.title}")
     else:
         lines.append("- All clear!")
         
