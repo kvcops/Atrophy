@@ -11,6 +11,7 @@ Security:
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,6 +19,10 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
+
+# Patch for httpx SSL verification issue on Windows when SSLKEYLOGFILE points to a non-existent drive
+if "SSLKEYLOGFILE" in os.environ:
+    del os.environ["SSLKEYLOGFILE"]
 
 import typer
 from rich.layout import Layout
