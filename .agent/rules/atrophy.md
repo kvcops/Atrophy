@@ -4,186 +4,270 @@ trigger: always_on
 
 ## Project Identity
 
-This is `atrophy` — a Python CLI tool that analyzes a developer's git history to track which coding skills they are personally exercising versus outsourcing to AI tools. The PyPI package name is `atrophy`. The GitHub repo is `atrophy`. Never suggest renaming it.
+This is `atrophy` — a Python CLI tool that analyzes a developer's git history
+to track which coding skills they personally exercise versus outsource to AI tools.
 
-Tagline: *"Your coding skills have a half-life. atrophy measures it."*
+**Tagline:** "Your coding skills have a half-life. atrophy measures it."
+**PyPI name:** `atrophy`
+**Entry point:** `atrophy` (via `uv tool install atrophy` or `pip install atrophy`)
+
+Never suggest renaming the project. Never suggest turning it into a code quality
+analyzer, linter, or dead code detector — those are completely different products.
+atrophy measures the DEVELOPER, not the codebase.
 
 ---
 
-## Tech Stack — Always Use These, Never Substitute
+## Canonical Tech Stack — Always Use These, Never Substitute
 
-- **Python 3.11+** — use modern syntax: `match`, `tomllib`, `ExceptionGroup`, `X | Y` union types
-- **uv** — package manager. Never suggest `pip install` to the user. Always use `uv add`, `uv run`, `uv sync`
-- **Typer** — CLI framework. Never use Click, argparse, or any other CLI library
-- **Pydantic v2** — all data models and config. Use `model_validator`, `field_validator`, `SecretStr`. Never use Pydantic v1 syntax (`@validator`, `class Config`)
-- **pydantic-settings** — for all environment variable and config file handling
-- **SQLAlchemy 2.0 async** — ORM only. Use `mapped_column`, `Mapped`, `DeclarativeBase`, `AsyncSession`. Never use SQLAlchemy 1.x patterns
-- **aiosqlite** — async SQLite driver
-- **GitPython** — git history access
-- **Textual** — TUI dashboard. Never suggest building a separate web server for the dashboard
-- **Rich** — all terminal output styling (progress bars, tables, panels, color)
-- **tree-sitter** — code parsing for skill detection
-- **httpx** — async HTTP client for Ollama provider
-- **Pillow + qrcode** — share card PNG generation
+| Layer | Library | Version | Never Use Instead |
+|---|---|---|---|
+| CLI framework | **Typer** | >=0.12.0 | Click, argparse, fire |
+| Terminal output | **Rich** | >=13.7.0 | print(), colorama, termcolor |
+| Interactive TUI | **Textual** | >=0.61.0 | curses, urwid, blessed |
+| Data validation | **Pydantic v2** | >=2.7.0 | Pydantic v1, attrs, dataclasses alone |
+| Config/env vars | **pydantic-settings** | >=2.3.0 | python-decouple, dynaconf |
+| Database ORM | **SQLAlchemy 2.0 async** | >=2.0.30 | SQLAlchemy 1.x, raw sqlite3, peewee |
+| Async SQLite driver | **aiosqlite** | >=0.20.0 | aiofiles for DB |
+| Git history | **GitPython** | >=3.1.43 | subprocess git commands directly |
+| Code parsing | **tree-sitter-languages** | >=1.10.2 | regex alone for code structure |
+| HTTP client | **httpx** | >=0.27.0 | requests (sync), aiohttp |
+| Ollama API | **ollama** (official library) | >=0.4.0 | raw httpx for Ollama chat calls |
+| OpenAI API | **openai** | >=1.30.0 | — |
+| Anthropic API | **anthropic** | >=0.28.0 | — |
+| Package manager | **uv** | latest | pip, poetry, pdm |
+| Linter/formatter | **ruff** | latest | black, flake8, isort, pylint |
+| Security scanner | **bandit** | latest | — |
+| Dep CVE scanner | **pip-audit** | latest | safety |
+| Testing | **pytest + pytest-asyncio** | latest | unittest, nose |
+| Share card images | **Pillow + qrcode[pil]** | latest | — |
+
+---
+
+## Complete Feature Map — Know What Exists
+
+Before building anything new, check this map to avoid duplicating existing features.
+
+### CLI Commands (all implemented)
+```
+atrophy init                    # One-time repo setup, runs onboarding wizard
+atrophy init --email <email>    # Skip email prompt
+atrophy init --no-interactive   # For CI/GitHub Action use
+
+atrophy scan                    # Full scan, last 180 days
+atrophy scan --days <n>         # Custom lookback (7-3650)
+atrophy scan --force            # Re-scan even if done today
+atrophy scan --silent           # No output, for git hooks
+atrophy scan --quick            # Only new commits since last scan
+
+atrophy report                  # Full skill report in terminal
+atrophy report --json           # JSON output for piping
+atrophy report --share          # Save report.md to cwd
+
+atrophy dashboard               # Textual TUI (terminal + browser via textual serve)
+
+atrophy challenge               # View pending challenges
+atrophy challenge --generate    # LLM-powered new challenges
+atrophy challenge --generate --all  # Challenges from all repos combined
+atrophy challenge --done <id>   # Mark complete, update streak
+
+atrophy digest                  # Weekly Markdown digest to terminal
+atrophy digest --open           # Save and open in $EDITOR
+atrophy digest --silent --check # Cron-friendly: notify if scan overdue
+
+atrophy compare                 # Compare skill profile: 90-180d ago vs last 90d
+atrophy compare --vs-first-scan # Before vs after first atrophy init
+atrophy insights                # LLM-powered personal coaching paragraph
+
+atrophy repos                   # List all initialized repos
+atrophy repos --add <path>      # Initialize another repo
+atrophy repos --remove <name>   # Stop tracking a repo
+atrophy repos --scan-all        # Quick scan all repos
+atrophy repos --rename <n> <name> # Give a repo a display name
+
+atrophy config                  # Textual settings editor (inline mode)
+
+atrophy hook --install          # Install git post-commit hook
+atrophy hook --uninstall        # Remove hook
+atrophy hook --status           # Show hook status
+
+atrophy remind --enable         # Weekly cron reminder (optional)
+atrophy remind --disable        # Remove cron entry
+
+atrophy publish                 # Generate shareable skill profile
+atrophy profile                 # Generate local HTML profile card
+atrophy leaderboard             # Show community leaderboard from GitHub
+
+atrophy share                   # Generate atrophy-card.png for Twitter/X
+atrophy badge [--port <n>]      # Start local badge SVG server (127.0.0.1 only)
+
+atrophy team --setup <url>      # Clone team repo and configure team mode
+atrophy team --checkin          # Push anonymized weekly profile to team repo
+atrophy team report             # Pull and display team skill dashboard
+atrophy team invite <username>  # Print invite instructions
+```
+
+### Core Modules (all implemented)
+```
+atrophy/core/git_scanner.py         # GitScanner — walks commit history
+atrophy/core/ai_detector.py         # AIDetector — 5-signal human/AI classification
+atrophy/core/skill_mapper.py        # SkillMapper — 3-layer skill detection
+atrophy/core/challenge_engine.py    # ChallengeEngine — LLM challenge generator
+atrophy/core/context_builder.py     # ContextBuilder — rich context for LLM prompts
+atrophy/core/storage.py             # Storage — SQLAlchemy 2.0 async ORM
+atrophy/config.py                   # Settings — pydantic-settings
+atrophy/exceptions.py               # Custom exceptions
+atrophy/cli/app.py                  # All Typer commands
+atrophy/cli/onboarding.py           # First-run wizard with provider picker
+atrophy/cli/output.py               # show_error(), show_success(), show_info()
+atrophy/tui/dashboard.py            # Textual TUI app
+atrophy/providers/base.py           # BaseLLMProvider abstract class
+atrophy/providers/openai_provider.py
+atrophy/providers/anthropic_provider.py
+atrophy/providers/openrouter_provider.py   # Live model fetch from /api/v1/models
+atrophy/providers/ollama_provider.py       # Local + cloud (ollama.com) modes
+atrophy/providers/__init__.py              # get_provider() factory
+vscode-extension/                          # VS Code extension (TypeScript)
+community/leaderboard.json                 # Community leaderboard (static)
+```
+
+---
+
+## LLM Provider Rules — Critical Details
+
+### OpenRouter
+- Base URL: `https://openrouter.ai/api/v1`
+- Uses `AsyncOpenAI` client with custom `base_url` — NOT a custom HTTP client
+- Model list endpoint: `GET https://openrouter.ai/api/v1/models` → `{"data": [...]}`
+- Model ID format: `provider/model-name` (e.g. `google/gemini-flash-1.5`)
+- Free models: `pricing.prompt == "0"` — always sort free models first
+- Required attribution headers: `HTTP-Referer` and `X-Title` in `extra_headers`
+- API key format: starts with `sk-or-` — validate this before saving
+
+### Ollama Local
+- Uses official `ollama` Python library (`from ollama import AsyncClient`)
+- SSRF guard: base URL MUST start with `http://localhost` or `http://127.0.0.1`
+- List local models: `GET {base_url}/api/tags` → `{"models": [...]}`
+- Returns `[]` silently if Ollama not running — never crash onboarding
+
+### Ollama Cloud
+- Uses official `ollama` Python library with `host="https://ollama.com"`
+- Auth: `headers={"Authorization": f"Bearer {api_key}"}`
+- List cloud models: `GET https://ollama.com/api/tags` with auth header
+- API key from: `https://ollama.com/settings/keys`
+- Model names include `:cloud` suffix (e.g. `gpt-oss:120b-cloud`)
+- NOT a separate API — same interface as local, different host + auth
+
+### API Key Security (applies to ALL providers)
+- ALL keys typed as `pydantic.SecretStr` in Settings
+- Unwrap (`.get_secret_value()`) ONLY at the exact moment passed to client constructor
+- Keys written to `~/.atrophy/.env` via `python-dotenv set_key()` — NEVER to config.json
+- Settings loads `~/.atrophy/.env` via `model_config = SettingsConfigDict(env_file=...)`
+- NEVER log, print, f-string, or include keys in error messages
+- Use `getpass.getpass()` for interactive key entry — NEVER `typer.prompt()`
 
 ---
 
 ## Security Rules — Non-Negotiable, Always Enforce
 
-These rules apply to every single file. Never write code that violates them, even if asked.
+Apply to every single file. Never violate even if asked.
 
 ### 1. Subprocess — Zero Shell Injection
-- ALWAYS use `shell=False` with a list of arguments
-- ALWAYS add `timeout=` to every subprocess call
-- NEVER pass user-supplied strings into subprocess via f-strings or concatenation
-- ✅ Correct: `subprocess.run(["git", "config", "user.email"], shell=False, timeout=5)`
-- ❌ Wrong: `subprocess.run(f"git config {user_input}", shell=True)`
+```python
+# CORRECT
+subprocess.run(["git", "config", "user.email"], shell=False, timeout=5)
+# WRONG — never do this
+subprocess.run(f"git config {user_input}", shell=True)
+```
+ALWAYS: `shell=False`, list of args, `timeout=` on every call.
 
-### 2. API Keys — SecretStr Only
-- ALL API keys MUST be typed as `pydantic.SecretStr`
-- Keys are ONLY unwrapped (`.get_secret_value()`) at the exact moment they're passed to the LLM client constructor — nowhere else
-- NEVER log, print, f-string, or include API keys in error messages
-- NEVER write API keys to disk in config files — `save()` must always `exclude={"openai_api_key", "anthropic_api_key"}`
-- Use `getpass.getpass()` (NOT `typer.prompt`) when asking users to enter API keys interactively
+### 2. SQL — Parameterized Only
+NEVER concatenate user input into SQL. ALWAYS use SQLAlchemy ORM or `bindparam()`.
 
-### 3. SQL — Parameterized Queries Only
-- NEVER concatenate user input into SQL strings
-- ALWAYS use SQLAlchemy ORM methods or `bindparam()`
-- If you see raw string formatting in a SQL context, flag it immediately and rewrite it
+### 3. Path Traversal
+```python
+safe = Path(user_input).resolve()
+assert safe.is_relative_to(expected_dir), "Path traversal detected"
+```
+Apply to: output paths, repo paths, hook installation paths, team repo paths.
 
-### 4. Path Traversal Prevention
-- ALWAYS resolve user-supplied file paths: `safe = Path(user_input).resolve()`
-- ALWAYS verify the resolved path is within the expected directory before using it
-- Use `Path.resolve()` then check `safe.is_relative_to(expected_dir)`
+### 4. No Pickle
+Zero `pickle`, `marshal`, or `shelve`. All serialization via JSON + Pydantic.
 
-### 5. No Pickle — Ever
-- NEVER use `pickle`, `marshal`, or `shelve` anywhere in this codebase
-- All serialization uses JSON + Pydantic `.model_dump()` / `.model_validate()`
+### 5. Network Binding
+Badge server: `uvicorn.run(app, host="127.0.0.1", port=port)` — never `0.0.0.0`
 
-### 6. Network Binding
-- The badge FastAPI server MUST bind to `127.0.0.1` only, never `0.0.0.0`
-- The Ollama provider URL MUST be validated to start with `http://localhost` or `http://127.0.0.1` before use (SSRF prevention)
+### 6. LLM Response Sanitization
+Every LLM JSON response must:
+1. Strip markdown fences before parsing
+2. Validate all required keys exist
+3. Type-check all values
+4. Truncate strings > 2000 chars
+5. Have a hardcoded fallback if parsing fails
 
-### 7. LLM Response Sanitization
-- ALWAYS strip markdown fences before JSON parsing LLM output
-- ALWAYS validate all required keys exist after parsing
-- ALWAYS type-check parsed values
-- ALWAYS truncate string fields longer than 2000 characters
-- ALWAYS wrap LLM response parsing in try/except with a hardcoded safe fallback
+### 7. Input Validation
+Email: `r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'`
+GitHub token: must start with `ghp_` or `github_pat_` before use
+OpenRouter key: must start with `sk-or-` (warn but don't block if wrong)
+All Typer params: use `min=`, `max=`, type annotations at the boundary
 
-### 8. Input Validation
-- ALWAYS validate email addresses with regex before storing:
-  `r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'`
-- ALWAYS use Typer's `min=`, `max=`, and type annotations to validate CLI inputs at the boundary
+### 8. Git Hook Security
+Hook file written to `.git/hooks/post-commit` ONLY.
+Validate `.git/hooks/` exists before writing.
+File permissions: `chmod 755` after writing.
+Content is a fixed template — never interpolate user input into hook file content.
+
+### 9. Team Mode Privacy
+Published profiles must NEVER contain: repo names, file paths, commit messages,
+code snippets, employer names, or any data beyond aggregated skill scores.
+Always show exactly what will be shared BEFORE any git push operation.
+Always require explicit `[y/N]` confirmation before pushing to team repo.
 
 ---
 
 ## Code Style Rules
 
-### Python Style
-- Line length: 88 characters (ruff default)
-- Use `ruff` for linting and formatting — never `black`, `flake8`, or `pylint`
-- All public functions and classes MUST have docstrings
-- Use `|` union syntax for types: `str | None`, NOT `Optional[str]`
-- Use `list[str]` not `List[str]`, `dict[str, int]` not `Dict[str, int]`
-- All async functions must be properly awaited — never mix sync/async incorrectly
-- Use `asyncio.run()` in CLI commands to bridge sync Typer → async storage/engine
-
-### Naming Conventions
-- Files: `snake_case.py`
-- Classes: `PascalCase`
-- Functions and variables: `snake_case`
-- Constants: `UPPER_SNAKE_CASE`
-- Never abbreviate beyond industry standards (e.g., `db` is fine, `sk_map` is not)
+### Python
+- Line length: 88 (ruff)
+- Union types: `str | None` not `Optional[str]`
+- Generics: `list[str]` not `List[str]`, `dict[str, int]` not `Dict[str, int]`
+- Async: all storage and provider calls are `async/await`
+- Bridge sync→async in CLI commands: `asyncio.run()`
+- All public functions and classes: docstrings required
+- All custom exceptions: subclass from `atrophy.exceptions.AtrophyError`
 
 ### Error Handling
-- ALWAYS use custom exceptions from `atrophy.exceptions` (create this module if it doesn't exist)
-- Custom exceptions: `AtrophyError`, `AtrophyStorageError`, `AtrophyGitError`, `ProviderError`
-- NEVER let library exceptions (GitCommandError, sqlalchemy errors) bubble up raw to the user
-- Catch them, wrap in the appropriate `AtrophyError` subclass, and show a Rich-formatted user-friendly message
+```python
+# ALWAYS use output.py helpers — never raw print for errors
+from atrophy.cli.output import show_error, show_success, show_info
+
+show_error("Cannot connect to Ollama.", hint="Start with: ollama serve")
+show_success("Scan complete — 847 commits analyzed")
+show_info("About Your First Scan", "Calibration improves after 3+ scans.")
+```
+
+Never let library exceptions bubble to the user raw. Catch and re-raise as:
+- `AtrophyGitError` for GitPython errors
+- `AtrophyStorageError` for SQLAlchemy errors
+- `ProviderError` for any LLM provider errors
 
 ### Rich Output Style
-- Progress bars: use `transient=True` so they disappear after completion
-- All error output: red `rich.panel.Panel` with title "❌ Error"
-- All success output: green `rich.panel.Panel` with title "✅ Done"
-- All info output: blue `rich.panel.Panel`
-- Never use `print()` directly — always `rich.print()` or `console.print()`
+- Progress bars: `transient=True` always
+- Never use bare `print()` — always `console.print()` from Rich
+- Error panels: red border, title "❌ Error"
+- Success panels: green border, title "✅ Done"
+- Info panels: blue border
+
+### Textual Style
+- Background: `#0d1117`
+- Card background: `#161b22`
+- Border (normal): `#30363d`
+- Dead zone border: `#f85149` (red)
+- Human score colors: green `#3fb950` (≥70), orange `#d29922` (40-70), red `#f85149` (<40)
+- NEVER use `time.sleep()` inside Textual — use workers or `await asyncio.sleep()`
+- Always use `inline=True` for Textual apps inside CLI commands
 
 ---
 
-## Project Structure Rules
+## Database Rules
 
-The canonical folder structure is:
-```
-atrophy/
-├── atrophy/
-│   ├── __init__.py
-│   ├── exceptions.py
-│   ├── cli/
-│   │   ├── __init__.py
-│   │   ├── app.py
-│   │   └── onboarding.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── git_scanner.py
-│   │   ├── ai_detector.py
-│   │   ├── skill_mapper.py
-│   │   ├── challenge_engine.py
-│   │   └── storage.py
-│   ├── config.py
-│   ├── tui/
-│   │   ├── __init__.py
-│   │   └── dashboard.py
-│   └── providers/
-│       ├── __init__.py
-│       ├── base.py
-│       ├── openai_provider.py
-│       ├── anthropic_provider.py
-│       └── ollama_provider.py
-├── tests/
-├── .pre-commit-config.yaml
-├── pyproject.toml
-├── SECURITY.md
-├── CONTRIBUTING.md
-├── built-with-atrophy.md
-└── README.md
-```
-
-- NEVER create files outside this structure without asking
-- NEVER create a `requirements.txt` — use `pyproject.toml` only
-- NEVER create a `setup.py` — this is a modern `pyproject.toml`-only project
-
----
-
-## Testing Rules
-
-- Test framework: `pytest` + `pytest-asyncio`
-- All async tests use `@pytest.mark.asyncio`
-- Test files live in `tests/` and mirror the `atrophy/` structure
-- Minimum: every public method in `core/` has at least one test
-- Use in-memory SQLite (`:memory:`) for storage tests — never touch the real `~/.atrophy/atrophy.db` in tests
-- Use `tmp_path` pytest fixture for any file system tests
-- Mock all external calls (LLM providers, git) in unit tests
-
----
-
-## Commit Message Convention
-
-- `feat:` new feature
-- `fix:` bug fix
-- `security:` security fix (prioritize reviewing these)
-- `test:` adding tests
-- `docs:` documentation only
-- `refactor:` no behavior change
-- `chore:` tooling, dependencies
-
----
-
-## What atrophy Does NOT Do (Never Add These)
-
-- No telemetry, analytics, or phone-home of any kind
-- No cloud sync or remote storage
-- No data collection beyond what's stored in `~/.atrophy/` locally
-- No web scraping
-- No reading files outside the target git repository
-- No writing to the target repository (read-only git access always)
+### Tables (canonical list — do not ad
