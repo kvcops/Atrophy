@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=venom&height=340&text=ATROPHY&fontSize=130&color=0:8B00FF,50:9932CC,100:4B0082&fontColor=ffffff&stroke=9932CC&strokeWidth=3&animation=fadeIn&desc=Your%20coding%20skills%20have%20a%20half-life.%20atrophy%20measures%20it.&descSize=20&descAlignY=78&fontAlignY=45" width="100%"/>
+<img src="Atrophy.png" alt="atrophy logo" width="100%"/>
 
 <br/>
 
